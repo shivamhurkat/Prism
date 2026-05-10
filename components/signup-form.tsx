@@ -1,55 +1,75 @@
 'use client'
 
-import { useState } from 'react'
+import { useActionState, useEffect, useState } from 'react'
+import { useFormStatus } from 'react-dom'
 import Link from 'next/link'
+import { toast } from 'sonner'
+import { Loader2 } from 'lucide-react'
+import {
+  sendSignUpMagicLink,
+  signInWithGoogle,
+  type AuthState,
+} from '@/app/actions/auth'
+
+const googleEnabled = process.env.NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED === 'true'
+
+const initialState: AuthState = { status: 'idle' }
 
 export function SignUpForm() {
-  const [email, setEmail] = useState('')
-  const [sent, setSent] = useState(false)
+  const [state, formAction] = useActionState(sendSignUpMagicLink, initialState)
+  const [resetted, setResetted] = useState(false)
 
-  function handleMagicLink(e: React.FormEvent) {
-    e.preventDefault()
-    if (!email) return
-    setSent(true)
-  }
+  useEffect(() => {
+    if (state.status === 'error') {
+      toast.error(state.message)
+    }
+  }, [state])
 
-  if (sent) {
+  const showSuccess = state.status === 'success' && !resetted
+
+  if (showSuccess && state.status === 'success') {
     return (
-      <div className="py-6 text-center space-y-2">
-        <p className="font-display text-xl font-light text-foreground">Check your inbox.</p>
-        <p className="text-sm text-muted-foreground font-sans">
-          Magic link sent to <span className="text-foreground">{email}</span>.
+      <div className="py-6 text-center space-y-4">
+        <h2 className="font-display text-2xl font-light text-foreground">
+          Check your email.
+        </h2>
+        <p className="text-sm text-muted-foreground font-sans leading-relaxed">
+          We sent a magic link to{' '}
+          <span className="text-foreground">{state.email}</span>. It expires in
+          1 hour.
         </p>
+        <button
+          type="button"
+          onClick={() => setResetted(true)}
+          className="text-xs text-muted-foreground hover:text-foreground transition-colors font-sans underline underline-offset-2"
+        >
+          Use a different email
+        </button>
       </div>
     )
   }
 
   return (
     <div className="space-y-5">
-      {/* Google */}
-      <button
-        type="button"
-        className="w-full h-12 rounded-[10px] border border-border bg-surface flex items-center justify-center gap-3 text-sm font-medium font-sans text-foreground hover:bg-muted transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-      >
-        <GoogleIcon />
-        Continue with Google
-      </button>
+      {googleEnabled && (
+        <>
+          <form action={signInWithGoogle}>
+            <GoogleButton />
+          </form>
+          <div className="relative flex items-center gap-4">
+            <div className="flex-1 h-px bg-border" />
+            <span className="text-xs text-muted-foreground font-sans">or</span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+        </>
+      )}
 
-      {/* Divider */}
-      <div className="relative flex items-center gap-4">
-        <div className="flex-1 h-px bg-border" />
-        <span className="text-xs text-muted-foreground font-sans">or</span>
-        <div className="flex-1 h-px bg-border" />
-      </div>
-
-      {/* Magic link form */}
-      <form onSubmit={handleMagicLink} className="space-y-3">
+      <form action={formAction} className="space-y-3">
         <div className="relative">
           <input
             type="email"
+            name="email"
             required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
             placeholder=" "
             id="email-signup"
             className="peer w-full h-12 rounded-[10px] border border-border bg-transparent px-4 pt-3 pb-1 text-sm font-sans text-foreground placeholder-transparent focus:outline-none focus:ring-2 focus:ring-accent-copper/40 focus:border-accent-copper/40 transition-colors"
@@ -61,12 +81,7 @@ export function SignUpForm() {
             Email address
           </label>
         </div>
-        <button
-          type="submit"
-          className="w-full h-12 rounded-full text-sm font-medium font-sans bg-accent-copper text-white hover:opacity-90 transition-opacity duration-150"
-        >
-          Send magic link
-        </button>
+        <MagicLinkButton label="Send magic link" />
       </form>
 
       <p className="text-center">
@@ -78,6 +93,38 @@ export function SignUpForm() {
         </Link>
       </p>
     </div>
+  )
+}
+
+function MagicLinkButton({ label }: { label: string }) {
+  const { pending } = useFormStatus()
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="w-full h-12 rounded-full text-sm font-medium font-sans bg-accent-copper text-white hover:opacity-90 transition-opacity duration-150 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+    >
+      {pending && <Loader2 className="h-4 w-4 animate-spin" />}
+      {label}
+    </button>
+  )
+}
+
+function GoogleButton() {
+  const { pending } = useFormStatus()
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="w-full h-12 rounded-[10px] border border-border bg-surface flex items-center justify-center gap-3 text-sm font-medium font-sans text-foreground hover:bg-muted transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-60 disabled:cursor-not-allowed"
+    >
+      {pending ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : (
+        <GoogleIcon />
+      )}
+      Continue with Google
+    </button>
   )
 }
 
