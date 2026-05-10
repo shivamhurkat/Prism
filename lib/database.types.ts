@@ -122,6 +122,35 @@ export type Database = {
         }
         Relationships: []
       }
+      decision_clarifications: {
+        Row: {
+          id: string
+          decision_id: string
+          question: string
+          suggested_answers: Json
+          user_answer: string | null
+          position: number
+          generation_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          decision_id: string
+          question: string
+          suggested_answers?: Json
+          user_answer?: string | null
+          position?: number
+          generation_id: string
+          created_at?: string
+        }
+        Update: {
+          question?: string
+          suggested_answers?: Json
+          user_answer?: string | null
+          position?: number
+        }
+        Relationships: []
+      }
       agent_charters: {
         Row: {
           id: string

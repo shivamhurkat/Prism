@@ -5,6 +5,8 @@ import { LiquidGlass } from '@/components/ui/liquid-glass'
 import { FileSection } from '@/components/file-list'
 import { ContextBlock } from '@/components/context-block'
 import { ContinueToConfigButton } from '@/components/continue-to-config-button'
+import { ClarificationsSection } from '@/components/clarifications-section'
+import { getApiKeyStatus } from '@/app/actions/api-keys'
 import type { DecisionStatus } from '@/lib/database.types'
 
 export const metadata = {
@@ -38,19 +40,40 @@ export default async function DecisionDetailPage({ params }: Props) {
 
   if (!user) redirect('/signin')
 
-  const [{ data: decision }, { data: files }] = await Promise.all([
-    supabase
-      .from('decisions')
-      .select('id, title, question, context_text, status, created_at')
-      .eq('id', id)
-      .eq('user_id', user.id)
-      .single(),
-    supabase
-      .from('decision_files')
-      .select('id, file_name, byte_size, file_type, extracted_text, parse_status, parse_skipped_reason, created_at')
-      .eq('decision_id', id)
-      .order('created_at', { ascending: true }),
-  ])
+  // Fetch latest clarification generation_id first, then rows for that generation
+  const latestGenRow = await supabase
+    .from('decision_clarifications')
+    .select('generation_id')
+    .eq('decision_id', id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single()
+
+  const latestGenId = latestGenRow.data?.generation_id ?? null
+
+  const [{ data: decision }, { data: files }, { data: clarifications }, apiKeyStatus] =
+    await Promise.all([
+      supabase
+        .from('decisions')
+        .select('id, title, question, context_text, status, created_at')
+        .eq('id', id)
+        .eq('user_id', user.id)
+        .single(),
+      supabase
+        .from('decision_files')
+        .select('id, file_name, byte_size, file_type, extracted_text, parse_status, parse_skipped_reason, created_at')
+        .eq('decision_id', id)
+        .order('created_at', { ascending: true }),
+      latestGenId
+        ? supabase
+            .from('decision_clarifications')
+            .select('id, question, suggested_answers, user_answer, position')
+            .eq('decision_id', id)
+            .eq('generation_id', latestGenId)
+            .order('position', { ascending: true })
+        : Promise.resolve({ data: [] }),
+      getApiKeyStatus(),
+    ])
 
   if (!decision) {
     return (
@@ -75,6 +98,10 @@ export default async function DecisionDetailPage({ params }: Props) {
 
   const { label, className } = statusConfig[decision.status]
   const initialFiles = files ?? []
+  const latestClarifications = (clarifications ?? []).map(c => ({
+    ...c,
+    suggested_answers: Array.isArray(c.suggested_answers) ? c.suggested_answers as string[] : [],
+  }))
 
   return (
     <div className="min-h-screen bg-background">
@@ -124,8 +151,16 @@ export default async function DecisionDetailPage({ params }: Props) {
             )}
 
             <FileSection decisionId={id} initialFiles={initialFiles} />
+          </div>
 
-            <div className="flex justify-end pt-2">
+          <ClarificationsSection
+            decisionId={id}
+            hasApiKey={apiKeyStatus.hasKey}
+            latestClarifications={latestClarifications}
+          />
+
+          <div className="border-t border-border pt-6">
+            <div className="flex justify-end">
               <ContinueToConfigButton />
             </div>
           </div>

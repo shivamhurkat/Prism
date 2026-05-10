@@ -118,3 +118,33 @@ Default: `dark`. `next-themes` sets `class="dark"` on `<html>`.
 ### parse_status state machine
 `pending` → `parsing` (on insert) → `ready` | `skipped` (image) | `failed` (error)
 Client shows `uploading` during upload before DB insert completes (optimistic only).
+
+---
+
+## Step 5
+
+### BYOK pattern
+- **Encryption** — `lib/crypto/keys.ts`: `encryptApiKey` / `decryptApiKey` use AES-256-GCM. Format: base64 of `[iv(12)|authTag(16)|ciphertext]`. Key source: `ENCRYPTION_KEY` env var (32-byte hex). `maskApiKey` returns `"sk-ant-...••••••{last4}"`.
+- **Validation flow** — `validateAnthropicKey(plaintextKey)` in `lib/ai/anthropic.ts` pings `claude-haiku-4-5-20251001` with max_tokens=5. Returns `{ ok: true }` or `{ ok: false, reason: 'invalid_key' | 'rate_limited' | string }`.
+- **Masked display** — key is always stored encrypted; displayed masked from re-decryption on read. `getApiKeyStatus()` server action handles the decrypt-then-mask step.
+- **`<ApiKeyForm>`** (`components/api-key-form.tsx`) — two-state: no-key form with eye toggle; connected display with Replace/Disconnect. Uses `useActionState` + `saveApiKey` server action.
+- **`<ApiKeyModal>`** (`components/api-key-modal.tsx`) — shadcn Dialog wrapping `<ApiKeyForm>`. Used by `<ClarificationsSection>` when generate is triggered with no key.
+- **Settings page** at `/dashboard/settings` — three LiquidGlass sections: API key, Profile (read-only), Account (sign-out).
+
+### Anthropic infrastructure
+- **Client factory** — `getAnthropicClientForUser(userId)` in `lib/ai/anthropic.ts`: queries `api_keys`, decrypts, returns `new Anthropic({ apiKey })` or `null`.
+- **MODELS constants** — `lib/ai/models.ts`: `light = 'claude-sonnet-4-6'`, `heavy = 'claude-opus-4-7'`, `validation = 'claude-haiku-4-5-20251001'`.
+- **PRICING** — `lib/ai/pricing.ts`: `PRICING` record + `getCostUsd(model, inputTokens, outputTokens)`.
+- **`callJsonModel`** (`lib/ai/call.ts`): gets client → times call → calls API → strips ` ```json ``` ` fences → JSON.parse with one retry on bad JSON → calls `logAiCall` → returns `{ data, usage }`. Throws `AiError` with codes `no_api_key | invalid_response | rate_limited | server_error`.
+- **`logAiCall`** (`lib/events.ts`): inserts `ai_call` event + increments `decisions.actual_cost_usd`.
+
+### Clarifications schema + generation_id versioning
+- **Table** `decision_clarifications` (migration: `supabase/migrations/0004_clarifications.sql`): `id, decision_id, question, suggested_answers jsonb, user_answer, position, generation_id uuid, created_at`. Index on `(decision_id, generation_id, position)`. RLS via decision ownership.
+- **generation_id convention** — each call to `generateClarifications` creates a new UUID `generation_id` for that batch. UI always displays only the latest batch (max `created_at` generation). Prior generations are retained in DB for history but never displayed.
+- **Server actions** (`app/actions/clarifications.ts`): `generateClarifications(decisionId)` and `saveClarificationAnswers(decisionId, answers[])`.
+
+### buildDecisionContext
+- `lib/ai/context.ts` — `buildDecisionContext({ decision, files })` composes title + question + context_text + file extracted_text sections. Hard cap 120,000 chars; truncates proportionally across files with `[truncated]` markers. Reused by agents and synthesis (future steps).
+
+### Rotating loading messages pattern
+For any AI call with a multi-second wait: cycle through static messages every 2s using `setInterval` in a `useEffect` keyed on the `isPending` boolean. Array: `['Reading your decision...', 'Identifying gaps in context...', 'Drafting questions a sharp advisor would ask...', 'Almost there...']`. Clear interval on unmount or pending=false.

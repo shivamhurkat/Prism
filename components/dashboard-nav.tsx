@@ -81,8 +81,8 @@ export function DashboardNav({ email, avatarUrl, displayName }: DashboardNavProp
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
                 <Link
-                  href="/dashboard/api-keys"
-                  onMouseEnter={() => router.prefetch('/dashboard/api-keys')}
+                  href="/dashboard/settings#api-key"
+                  onMouseEnter={() => router.prefetch('/dashboard/settings')}
                   className="cursor-pointer"
                 >
                   API keys
