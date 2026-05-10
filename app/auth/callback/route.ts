@@ -47,20 +47,11 @@ export async function GET(request: NextRequest) {
 
   console.log('[auth] session established for:', data.session?.user.email)
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('onboarded_at')
-    .eq('id', data.session!.user.id)
-    .single()
-
   const provider =
-    (data.session?.user.app_metadata?.provider as string | undefined) ??
-    'email'
+    (data.session?.user.app_metadata?.provider as string | undefined) ?? 'email'
   await logEvent('signin_completed', { provider })
 
-  const destination = profile?.onboarded_at ? '/dashboard' : '/onboarding'
-  const finalResponse = NextResponse.redirect(`${origin}${destination}`)
-
+  const finalResponse = NextResponse.redirect(`${origin}/dashboard`)
   cookiesFromSupabase.forEach(({ name, value, options }) => {
     finalResponse.cookies.set(name, value, options as Parameters<typeof finalResponse.cookies.set>[2])
   })

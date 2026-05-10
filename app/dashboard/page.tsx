@@ -5,6 +5,7 @@ import { logEvent } from '@/lib/events'
 import { LiquidGlass } from '@/components/ui/liquid-glass'
 import { DashboardNav } from '@/components/dashboard-nav'
 import { AmbientBackground } from '@/components/ui/ambient-background'
+import { OnboardingModal } from '@/components/onboarding-modal'
 import type { Tables, DecisionStatus } from '@/lib/database.types'
 
 export const metadata = {
@@ -22,23 +23,26 @@ function relativeTime(dateStr: string): string {
   return `${day} day${day === 1 ? '' : 's'} ago`
 }
 
-const statusConfig: Record<
-  DecisionStatus,
-  { label: string; className: string }
-> = {
-  draft: { label: 'Draft', className: 'bg-border/60 text-muted-foreground' },
+const statusConfig: Record<DecisionStatus, { label: string; className: string }> = {
+  draft: {
+    label: 'Draft',
+    className: 'bg-border/60 text-muted-foreground',
+  },
   configuring: {
     label: 'Configuring',
-    className: 'bg-blue-500/10 text-blue-500',
+    className: 'border border-accent-copper text-accent-copper',
   },
-  ready: { label: 'Ready', className: 'bg-blue-500/10 text-blue-500' },
+  ready: {
+    label: 'Ready',
+    className: 'border border-accent-copper text-accent-copper',
+  },
   running: {
     label: 'Running',
-    className: 'bg-warning/10 text-warning',
+    className: 'bg-accent-copper text-white',
   },
   completed: {
     label: 'Completed',
-    className: 'bg-success/10 text-success',
+    className: 'bg-success/15 text-success',
   },
   archived: {
     label: 'Archived',
@@ -46,7 +50,7 @@ const statusConfig: Record<
   },
   failed: {
     label: 'Failed',
-    className: 'bg-destructive/10 text-destructive',
+    className: 'bg-destructive/15 text-destructive',
   },
 }
 
@@ -63,7 +67,7 @@ export default async function DashboardPage() {
   const [{ data: profile }, { data: decisions }] = await Promise.all([
     supabase
       .from('profiles')
-      .select('email, full_name, avatar_url')
+      .select('email, full_name, avatar_url, onboarded_at')
       .eq('id', user.id)
       .single(),
     supabase
@@ -78,6 +82,7 @@ export default async function DashboardPage() {
   const email = profile?.email ?? user.email ?? ''
   const displayName = profile?.full_name ?? null
   const avatarUrl = profile?.avatar_url ?? null
+  const needsOnboarding = !profile?.onboarded_at
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -96,6 +101,10 @@ export default async function DashboardPage() {
           Prism — AI Decision Intelligence
         </p>
       </footer>
+
+      {needsOnboarding && (
+        <OnboardingModal initialName={profile?.full_name ?? ''} />
+      )}
     </div>
   )
 }
@@ -117,18 +126,20 @@ function EmptyState() {
         <LiquidGlass
           variant="prominent"
           interactive
-          className="w-full max-w-[480px] p-10 flex flex-col items-center gap-5"
+          className="w-full max-w-[480px] p-10"
         >
-          <Link
-            href="/dashboard/new"
-            className="rounded-full bg-accent-copper text-white px-8 py-3 text-sm font-sans font-medium hover:opacity-90 transition-opacity duration-150"
-          >
-            Start a decision
-          </Link>
-          <p className="text-xs text-muted-foreground font-sans leading-relaxed text-center">
-            Average decision takes 12 minutes. You&apos;ll get a board-ready
-            dashboard.
-          </p>
+          <div className="flex flex-col items-center gap-6">
+            <Link
+              href="/dashboard/new"
+              className="rounded-full bg-accent-copper text-white px-8 py-3 text-sm font-sans font-medium hover:opacity-90 transition-opacity duration-150"
+            >
+              Start a decision
+            </Link>
+            <p className="text-sm text-muted-foreground font-sans leading-relaxed text-center max-w-prose">
+              Average decision takes 12 minutes. You&apos;ll get a board-ready
+              dashboard.
+            </p>
+          </div>
         </LiquidGlass>
       </div>
     </div>
@@ -138,7 +149,10 @@ function EmptyState() {
 function DecisionList({
   decisions,
 }: {
-  decisions: Pick<Tables<'decisions'>, 'id' | 'title' | 'question' | 'status' | 'created_at'>[]
+  decisions: Pick<
+    Tables<'decisions'>,
+    'id' | 'title' | 'question' | 'status' | 'created_at'
+  >[]
 }) {
   return (
     <div className="max-w-4xl mx-auto px-6 py-12 space-y-8">
@@ -175,7 +189,7 @@ function DecisionList({
                 </div>
                 <div className="flex flex-col items-end gap-2 shrink-0">
                   <span
-                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-sans font-medium ${className}`}
+                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-sans font-medium uppercase tracking-wide ${className}`}
                   >
                     {label}
                   </span>
