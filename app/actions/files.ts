@@ -55,8 +55,13 @@ export async function uploadDecisionFile(
   const file = formData.get('file') as File | null
   if (!file) return { error: 'No file provided.' }
 
-  const mime = file.type || 'application/octet-stream'
-  if (!ALLOWED_MIMES.has(mime)) return { error: `File type not supported: ${mime}` }
+  let mime = file.type || 'application/octet-stream'
+
+if (mime === 'application/octet-stream' && file.name.toLowerCase().endsWith('.md')) {
+  mime = 'text/markdown'
+}
+
+if (!ALLOWED_MIMES.has(mime)) return { error: `File type not supported: ${mime}` }
   if (file.size > MAX_BYTES) return { error: 'File exceeds 25MB limit.' }
 
   const fileId = randomUUID()
