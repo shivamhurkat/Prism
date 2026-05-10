@@ -4,7 +4,6 @@ import { useState, useTransition, useEffect, useRef } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { LiquidGlass } from '@/components/ui/liquid-glass'
-import { SubmitButton } from '@/components/ui/submit-button'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,10 +49,21 @@ export function ClarificationsSection({ decisionId, hasApiKey, latestClarificati
   const [isGenerating, startGenerate] = useTransition()
   const [isSaving, startSave] = useTransition()
   const [skipped, setSkipped] = useState(false)
+  const [generateError, setGenerateError] = useState<string | null>(null)
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false)
   const [pendingRetry, setPendingRetry] = useState(false)
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0)
   const loadingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Sync state when server revalidates and passes updated props — useState only
+  // takes the initial value, so we need this effect to pick up questions after generation.
+  useEffect(() => {
+    if (latestClarifications.length > 0) {
+      setClarifications(latestClarifications)
+      setAnswers(Object.fromEntries(latestClarifications.map(c => [c.id, c.user_answer ?? ''])))
+      setSelectedChips({})
+    }
+  }, [latestClarifications])
 
   useEffect(() => {
     if (isGenerating) {
@@ -70,6 +80,7 @@ export function ClarificationsSection({ decisionId, hasApiKey, latestClarificati
   }, [isGenerating])
 
   function handleGenerate() {
+    setGenerateError(null)
     startGenerate(async () => {
       const result = await generateClarifications(decisionId)
       if ('error' in result) {
@@ -77,14 +88,13 @@ export function ClarificationsSection({ decisionId, hasApiKey, latestClarificati
           setApiKeyModalOpen(true)
           setPendingRetry(true)
         } else {
-          toast.error(result.error, {
-            action: { label: 'Try again', onClick: handleGenerate },
-          })
+          const msg = result.error || 'Generation failed — check server logs.'
+          setGenerateError(msg)
+          toast.error(msg)
         }
         return
       }
-      // Server revalidation will update latestClarifications via page refresh;
-      // optimistically keep existing state until revalidation lands
+      // State syncs via the useEffect above once revalidatePath re-renders the parent.
     })
   }
 
@@ -167,6 +177,11 @@ export function ClarificationsSection({ decisionId, hasApiKey, latestClarificati
                   >
                     Generate clarifying questions
                   </button>
+                  {generateError && (
+                    <p className="text-xs text-destructive font-sans max-w-sm">
+                      {generateError}
+                    </p>
+                  )}
                   <button
                     onClick={() => setSkipped(true)}
                     className="text-xs text-muted-foreground font-sans hover:text-foreground transition-colors"

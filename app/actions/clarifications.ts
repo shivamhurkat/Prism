@@ -107,13 +107,12 @@ export async function generateClarifications(decisionId: string): Promise<Genera
     revalidatePath(`/dashboard/d/${decisionId}`)
     return { status: 'success', generationId }
   } catch (err) {
+    console.error('[clarifications] full error', err)
     if (err instanceof AiError) {
-      console.log('[clarifications] error', err.code)
-      return { error: err.message, code: err.code }
+      return { error: err.message || err.code, code: err.code }
     }
-    const msg = err instanceof Error ? err.message : 'Unknown error'
-    console.log('[clarifications] error', msg)
-    return { error: msg }
+    const msg = err instanceof Error ? (err.message || err.constructor.name) : String(err)
+    return { error: msg || 'Unknown error generating clarifications' }
   }
 }
 

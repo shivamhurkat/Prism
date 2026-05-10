@@ -57,9 +57,11 @@ export async function callJsonModel({
   try {
     result = await attempt([{ role: 'user', content: userMessage }])
   } catch (err: unknown) {
+    console.error('[ai] call error', err)
     const status = (err as { status?: number })?.status
     if (status === 429) throw new AiError('rate_limited')
-    throw new AiError('server_error', (err as Error).message)
+    const msg = (err as Error).message || `HTTP ${status ?? 'unknown'}`
+    throw new AiError('server_error', msg)
   }
 
   let parsed: unknown
@@ -84,8 +86,9 @@ export async function callJsonModel({
         throw new AiError('invalid_response', 'Model returned invalid JSON after retry')
       }
     } catch (err) {
+      console.error('[ai] retry error', err)
       if (err instanceof AiError) throw err
-      throw new AiError('invalid_response', (err as Error).message)
+      throw new AiError('invalid_response', (err as Error).message || 'Retry failed')
     }
   }
 
