@@ -1,12 +1,13 @@
 'use client'
 
 import { useActionState } from 'react'
-import { useFormStatus } from 'react-dom'
+import { useTransition } from 'react'
 import { motion } from 'motion/react'
 import { Loader2 } from 'lucide-react'
 import { LiquidGlass } from '@/components/ui/liquid-glass'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { SubmitButton } from '@/components/ui/submit-button'
 import {
   Select,
   SelectContent,
@@ -15,6 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { completeOnboarding, type OnboardingState } from '@/app/actions/onboarding'
+import { signOut } from '@/app/actions/auth'
 
 interface OnboardingModalProps {
   initialName: string
@@ -24,9 +26,14 @@ const initialState: OnboardingState = { status: 'idle' }
 
 export function OnboardingModal({ initialName }: OnboardingModalProps) {
   const [state, formAction] = useActionState(completeOnboarding, initialState)
+  const [isSigningOut, startSignOut] = useTransition()
 
-  // After success, revalidatePath causes server re-render which drops this modal.
-  // Show a brief "settling" state in case of rerender delay.
+  function handleSignOut() {
+    startSignOut(async () => {
+      await signOut()
+    })
+  }
+
   if (state.status === 'success') {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-xl bg-black/50 dark:bg-black/50">
@@ -41,10 +48,7 @@ export function OnboardingModal({ initialName }: OnboardingModalProps) {
   const errors = state.status === 'error' ? state.errors : {}
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-xl bg-black/30 dark:bg-black/50"
-      // No onClick — not dismissable by backdrop click
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-xl bg-black/30 dark:bg-black/50">
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
@@ -62,14 +66,11 @@ export function OnboardingModal({ initialName }: OnboardingModalProps) {
             </p>
           </div>
 
-          {/* Root error */}
           {errors._root && (
             <p className="mt-4 text-sm text-destructive font-sans">{errors._root}</p>
           )}
 
-          {/* Form */}
           <form action={formAction} className="mt-8 flex flex-col gap-5">
-            {/* Full name */}
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="full_name" className="font-sans text-sm text-foreground">
                 Full name
@@ -89,7 +90,6 @@ export function OnboardingModal({ initialName }: OnboardingModalProps) {
               )}
             </div>
 
-            {/* Company name */}
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="company_name" className="font-sans text-sm text-foreground">
                 Company name
@@ -108,7 +108,6 @@ export function OnboardingModal({ initialName }: OnboardingModalProps) {
               )}
             </div>
 
-            {/* Role */}
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="role" className="font-sans text-sm text-foreground">
                 Your role
@@ -127,7 +126,6 @@ export function OnboardingModal({ initialName }: OnboardingModalProps) {
               )}
             </div>
 
-            {/* Team size */}
             <div className="flex flex-col gap-1.5">
               <Label className="font-sans text-sm text-foreground">Team size</Label>
               <Select name="team_size" required>
@@ -150,7 +148,6 @@ export function OnboardingModal({ initialName }: OnboardingModalProps) {
               )}
             </div>
 
-            {/* Industry */}
             <div className="flex flex-col gap-1.5">
               <Label className="font-sans text-sm text-foreground">Industry</Label>
               <Select name="industry" required>
@@ -177,7 +174,6 @@ export function OnboardingModal({ initialName }: OnboardingModalProps) {
               )}
             </div>
 
-            {/* Primary use case */}
             <div className="flex flex-col gap-1.5">
               <Label className="font-sans text-sm text-foreground">
                 Primary use case for Prism
@@ -203,40 +199,28 @@ export function OnboardingModal({ initialName }: OnboardingModalProps) {
               )}
             </div>
 
-            <SubmitButton />
+            <SubmitButton variant="primary" size="lg" pendingLabel="Convening..." className="mt-2 w-full">
+              Convene my council
+            </SubmitButton>
 
             <p className="text-xs text-muted-foreground font-sans text-center -mt-1">
               You can update these later in Settings.
             </p>
           </form>
 
-          {/* Sign out — bottom-right */}
           <div className="mt-6 flex justify-end">
-            <form action="/auth/signout" method="POST">
-              <button
-                type="submit"
-                className="text-xs text-muted-foreground hover:text-foreground transition-colors font-sans"
-              >
-                Sign out
-              </button>
-            </form>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={isSigningOut}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors font-sans disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {isSigningOut && <Loader2 className="h-3 w-3 animate-spin" />}
+              Sign out
+            </button>
           </div>
         </LiquidGlass>
       </motion.div>
     </div>
-  )
-}
-
-function SubmitButton() {
-  const { pending } = useFormStatus()
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="mt-2 w-full h-12 rounded-full bg-accent-copper text-white text-sm font-sans font-medium hover:opacity-90 transition-opacity duration-150 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-    >
-      {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-      Convene my council
-    </button>
   )
 }

@@ -1,6 +1,9 @@
 'use client'
 
+import { useTransition } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { Loader2 } from 'lucide-react'
 import { LiquidGlass } from '@/components/ui/liquid-glass'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -10,6 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { signOut } from '@/app/actions/auth'
 
 interface DashboardNavProps {
   email: string
@@ -19,6 +23,14 @@ interface DashboardNavProps {
 
 export function DashboardNav({ email, avatarUrl, displayName }: DashboardNavProps) {
   const initial = ((displayName || email || '?')[0] ?? '?').toUpperCase()
+  const router = useRouter()
+  const [isSigningOut, startSignOut] = useTransition()
+
+  function handleSignOut() {
+    startSignOut(async () => {
+      await signOut()
+    })
+  }
 
   return (
     <LiquidGlass
@@ -28,6 +40,7 @@ export function DashboardNav({ email, avatarUrl, displayName }: DashboardNavProp
       <div className="flex items-center justify-between px-6 py-3 max-w-7xl mx-auto">
         <Link
           href="/dashboard"
+          onMouseEnter={() => router.prefetch('/dashboard')}
           className="font-display text-xl font-light text-foreground hover:opacity-80 transition-opacity"
         >
           Prism
@@ -36,6 +49,7 @@ export function DashboardNav({ email, avatarUrl, displayName }: DashboardNavProp
         <div className="flex items-center gap-3">
           <Link
             href="/dashboard/new"
+            onMouseEnter={() => router.prefetch('/dashboard/new')}
             className="rounded-full bg-accent-copper text-white px-5 py-2 text-sm font-sans font-medium hover:opacity-90 transition-opacity duration-150"
           >
             New decision
@@ -66,29 +80,36 @@ export function DashboardNav({ email, avatarUrl, displayName }: DashboardNavProp
               </div>
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
-                <Link href="/dashboard/api-keys" className="cursor-pointer">
+                <Link
+                  href="/dashboard/api-keys"
+                  onMouseEnter={() => router.prefetch('/dashboard/api-keys')}
+                  className="cursor-pointer"
+                >
                   API keys
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href="/dashboard/settings" className="cursor-pointer">
+                <Link
+                  href="/dashboard/settings"
+                  onMouseEnter={() => router.prefetch('/dashboard/settings')}
+                  className="cursor-pointer"
+                >
                   Settings
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <form
-                  action="/auth/signout"
-                  method="POST"
-                  className="w-full"
-                >
-                  <button
-                    type="submit"
-                    className="w-full text-left text-sm font-sans cursor-pointer"
-                  >
-                    Sign out
-                  </button>
-                </form>
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault()
+                  handleSignOut()
+                }}
+                disabled={isSigningOut}
+                className="cursor-pointer"
+              >
+                <span className="flex items-center gap-2 text-sm font-sans w-full">
+                  {isSigningOut && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Sign out
+                </span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

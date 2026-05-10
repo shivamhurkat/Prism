@@ -5,6 +5,7 @@ import { useFormStatus } from 'react-dom'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
+import { SubmitButton } from '@/components/ui/submit-button'
 import {
   sendSignInMagicLink,
   signInWithGoogle,
@@ -81,7 +82,9 @@ export function SignInForm() {
             Email address
           </label>
         </div>
-        <MagicLinkButton label="Send magic link" />
+        <SubmitButton variant="primary" size="lg" pendingLabel="Sending..." className="w-full">
+          Send magic link
+        </SubmitButton>
       </form>
 
       <p className="text-xs text-muted-foreground font-sans text-center mt-1">
@@ -97,20 +100,6 @@ export function SignInForm() {
         </Link>
       </p>
     </div>
-  )
-}
-
-function MagicLinkButton({ label }: { label: string }) {
-  const { pending } = useFormStatus()
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="w-full h-12 rounded-full text-sm font-medium font-sans bg-accent-copper text-white hover:opacity-90 transition-opacity duration-150 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-    >
-      {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-      {label}
-    </button>
   )
 }
 

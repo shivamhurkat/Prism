@@ -95,6 +95,8 @@ export type Database = {
           file_type: string | null
           byte_size: number | null
           extracted_text: string | null
+          parse_status: 'pending' | 'parsing' | 'ready' | 'failed' | 'skipped'
+          parse_skipped_reason: string | null
           created_at: string
         }
         Insert: {
@@ -105,6 +107,8 @@ export type Database = {
           file_type?: string | null
           byte_size?: number | null
           extracted_text?: string | null
+          parse_status?: 'pending' | 'parsing' | 'ready' | 'failed' | 'skipped'
+          parse_skipped_reason?: string | null
           created_at?: string
         }
         Update: {
@@ -113,6 +117,8 @@ export type Database = {
           file_type?: string | null
           byte_size?: number | null
           extracted_text?: string | null
+          parse_status?: 'pending' | 'parsing' | 'ready' | 'failed' | 'skipped'
+          parse_skipped_reason?: string | null
         }
         Relationships: []
       }
@@ -376,3 +382,4 @@ export type Tables<T extends keyof Database['public']['Tables']> =
 
 export type DecisionStatus = Tables<'decisions'>['status']
 export type RunStatus = Tables<'runs'>['status']
+export type ParseStatus = Tables<'decision_files'>['parse_status']

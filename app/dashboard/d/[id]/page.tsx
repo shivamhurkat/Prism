@@ -1,7 +1,10 @@
-import { redirect, notFound } from 'next/navigation'
+import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { LiquidGlass } from '@/components/ui/liquid-glass'
+import { FileSection } from '@/components/file-list'
+import { ContextBlock } from '@/components/context-block'
+import { ContinueToConfigButton } from '@/components/continue-to-config-button'
 import type { DecisionStatus } from '@/lib/database.types'
 
 export const metadata = {
@@ -35,12 +38,19 @@ export default async function DecisionDetailPage({ params }: Props) {
 
   if (!user) redirect('/signin')
 
-  const { data: decision } = await supabase
-    .from('decisions')
-    .select('id, title, question, status, created_at')
-    .eq('id', id)
-    .eq('user_id', user.id)
-    .single()
+  const [{ data: decision }, { data: files }] = await Promise.all([
+    supabase
+      .from('decisions')
+      .select('id, title, question, context_text, status, created_at')
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .single(),
+    supabase
+      .from('decision_files')
+      .select('id, file_name, byte_size, file_type, extracted_text, parse_status, parse_skipped_reason, created_at')
+      .eq('decision_id', id)
+      .order('created_at', { ascending: true }),
+  ])
 
   if (!decision) {
     return (
@@ -64,6 +74,7 @@ export default async function DecisionDetailPage({ params }: Props) {
   }
 
   const { label, className } = statusConfig[decision.status]
+  const initialFiles = files ?? []
 
   return (
     <div className="min-h-screen bg-background">
@@ -97,10 +108,26 @@ export default async function DecisionDetailPage({ params }: Props) {
             </p>
           )}
 
-          <div className="border-t border-border pt-6">
-            <p className="text-sm text-muted-foreground font-sans italic">
-              Your council and scenarios will be configured here. Coming in step 4.
-            </p>
+          {/* Context & files section */}
+          <div className="border-t border-border pt-6 space-y-5">
+            <div>
+              <h2 className="font-display text-[24px] font-light text-foreground">
+                Context &amp; files
+              </h2>
+              <p className="text-sm text-muted-foreground font-sans mt-1">
+                Upload board decks, financials, contracts, strategy memos — anything your council should read.
+              </p>
+            </div>
+
+            {decision.context_text && (
+              <ContextBlock text={decision.context_text} />
+            )}
+
+            <FileSection decisionId={id} initialFiles={initialFiles} />
+
+            <div className="flex justify-end pt-2">
+              <ContinueToConfigButton />
+            </div>
           </div>
         </LiquidGlass>
       </div>

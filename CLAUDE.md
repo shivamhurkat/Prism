@@ -89,3 +89,32 @@ Default: `dark`. `next-themes` sets `class="dark"` on `<html>`.
 - `HeroSpecimen`: `motion/react` `useMotionValue` + `useSpring` for 3D tilt.
 - `Providers` (`components/providers.tsx`) wraps root layout with ThemeProvider.
 - SVG `#liquid-glass-warp` defined once in root layout body.
+
+---
+
+## Step 4
+
+### Responsiveness primitives
+- **`<SubmitButton>`** (`components/ui/submit-button.tsx`) — unified form submit button. Props: `variant` ("primary" | "secondary"), `size` ("default" | "lg"), `pendingLabel`, `disabled`, `className`. Uses `useFormStatus` internally. After 500ms still pending, swaps label to `pendingLabel`. Replaces all inline `DraftButton`/`ContinueButton`/`MagicLinkButton`/`SubmitButton` patterns across auth + decision forms.
+- **`useTransition` pattern** — for non-form actions (sign-out in dashboard-nav, file delete). Pattern: `const [isPending, startTransition] = useTransition(); startTransition(async () => { await action() })`. Show Loader2 + disable during pending.
+- **`loading.tsx` skeletons** — at `/dashboard`, `/dashboard/new`, `/dashboard/d/[id]`, `/auth/callback`. All use `LiquidGlass` + `animate-pulse` content blocks matching real layout shapes.
+- **nprogress bar** — `next-nprogress-bar` `<AppProgressBar>` mounted in `Providers`. Height 2px, color `#C8742A`, no spinner.
+- **Prefetch on hover** — `router.prefetch(href)` on `onMouseEnter` in `DashboardNav` links and `DecisionList` cards. `DecisionList` extracted to `components/decision-list.tsx` (client component).
+- **`next.config.ts`** — `experimental.optimizePackageImports: ['lucide-react', 'motion/react']`; `serverExternalPackages: ['pdf-parse', 'mammoth', 'xlsx']`.
+
+### File upload pipeline
+- **Storage bucket** — `decision-files` (private, 25MB limit). Path convention: `{user_id}/{decision_id}/{uuid}-{sanitized_filename}`. RLS policies on `storage.objects` gate by `(storage.foldername(name))[1] = auth.uid()::text`. SQL: `supabase/migrations/0002_storage.sql`.
+- **Schema** — `decision_files` extended with `parse_status` (enum: pending | parsing | ready | failed | skipped) and `parse_skipped_reason text`. SQL: `supabase/migrations/0003_files_meta.sql`.
+- **Server action lifecycle** (`app/actions/files.ts`): verify ownership → validate mime/size → upload to storage → insert row (parse_status='parsing') → `extractFileText()` → update row (ready/skipped/failed) → `revalidatePath` → `logEvent`.
+- **Optimistic UI** — `FileSection` (in `components/file-list.tsx`) uses `useOptimistic<State, Action>` with reducer. Optimistic file shown with parse_status='uploading' immediately on drop. Server revalidation replaces it on completion.
+- **Delete** — confirmed via `AlertDialog`, calls `deleteDecisionFile` inside `useTransition`, optimistic removal via `addOptimistic({ type: 'remove', id })`.
+
+### Extractor architecture
+- `lib/extractors/` — `pdf.ts` (pdf-parse), `docx.ts` (mammoth), `xlsx.ts` (SheetJS, CSV per sheet), `text.ts` (TextDecoder UTF-8), `index.ts` (dispatcher).
+- All capped at **200,000 chars**.
+- Returns `{ text: string | null, reason?: string }`. Images return `{ text: null, reason: 'vision_pending' }`.
+- Errors caught and returned as `{ text: null, reason: 'extraction_failed: ...' }`.
+
+### parse_status state machine
+`pending` → `parsing` (on insert) → `ready` | `skipped` (image) | `failed` (error)
+Client shows `uploading` during upload before DB insert completes (optimistic only).

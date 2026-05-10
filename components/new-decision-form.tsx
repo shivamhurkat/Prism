@@ -1,11 +1,11 @@
 'use client'
 
 import { useActionState, useEffect, useRef, useState } from 'react'
-import { useFormStatus } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Loader2, ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import { Label } from '@/components/ui/label'
+import { SubmitButton } from '@/components/ui/submit-button'
 import {
   saveDecisionDraft,
   saveDecisionAndContinue,
@@ -24,15 +24,11 @@ export function NewDecisionForm() {
   const [draftState, draftAction] = useActionState(saveDecisionDraft, draftInitial)
   const [continueState, continueAction] = useActionState(saveDecisionAndContinue, continueInitial)
 
-  // Persisted decision id (set after first draft save)
   const [decisionId, setDecisionId] = useState<string>('')
-
-  // Field values (controlled for char counters)
   const [title, setTitle] = useState('')
   const [question, setQuestion] = useState('')
   const [contextText, setContextText] = useState('')
 
-  // Collapsible context section
   const [contextExpanded, setContextExpanded] = useState(() => {
     if (typeof window === 'undefined') return false
     try {
@@ -55,7 +51,6 @@ export function NewDecisionForm() {
     })
   }
 
-  // Auto-grow question textarea
   function autoGrow(el: HTMLTextAreaElement) {
     el.style.height = 'auto'
     el.style.height = `${el.scrollHeight}px`
@@ -69,7 +64,6 @@ export function NewDecisionForm() {
     if (contextRef.current) autoGrow(contextRef.current)
   }, [contextText])
 
-  // Draft save effects
   useEffect(() => {
     if (draftState.status === 'success') {
       toast.success('Draft saved.')
@@ -98,7 +92,6 @@ export function NewDecisionForm() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Hidden id field shared by both forms via refs */}
       {/* Title */}
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="title" className="font-sans text-sm text-foreground">
@@ -124,9 +117,7 @@ export function NewDecisionForm() {
           )}
           <span
             className={`text-xs font-mono tabular-nums ${
-              title.length > 110
-                ? 'text-warning'
-                : 'text-muted-foreground'
+              title.length > 110 ? 'text-warning' : 'text-muted-foreground'
             }`}
           >
             {title.length}/120
@@ -204,9 +195,6 @@ export function NewDecisionForm() {
               placeholder="Anything else your council should know — background, constraints, what you've already considered."
               className="w-full rounded-[10px] border border-border bg-transparent px-4 py-3 text-sm font-sans text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-copper/40 focus:border-accent-copper/40 transition-colors resize-none overflow-hidden leading-relaxed"
             />
-            <p className="text-xs text-muted-foreground font-sans">
-              File uploads coming next.
-            </p>
           </div>
         )}
       </div>
@@ -219,7 +207,14 @@ export function NewDecisionForm() {
           <input type="hidden" name="title" value={title} />
           <input type="hidden" name="question" value={question} />
           <input type="hidden" name="context_text" value={contextText} />
-          <DraftButton disabled={!titleOk} />
+          <SubmitButton
+            variant="secondary"
+            disabled={!titleOk}
+            pendingLabel="Saving..."
+            className="w-full"
+          >
+            Save as draft
+          </SubmitButton>
         </form>
 
         {/* Continue form */}
@@ -228,37 +223,16 @@ export function NewDecisionForm() {
           <input type="hidden" name="title" value={title} />
           <input type="hidden" name="question" value={question} />
           <input type="hidden" name="context_text" value={contextText} />
-          <ContinueButton disabled={!titleOk || !questionOk} />
+          <SubmitButton
+            variant="primary"
+            disabled={!titleOk || !questionOk}
+            pendingLabel="Saving..."
+            className="w-full"
+          >
+            Continue → Configure council
+          </SubmitButton>
         </form>
       </div>
     </div>
-  )
-}
-
-function DraftButton({ disabled }: { disabled: boolean }) {
-  const { pending } = useFormStatus()
-  return (
-    <button
-      type="submit"
-      disabled={pending || disabled}
-      className="w-full h-11 rounded-[10px] border border-border text-foreground text-sm font-sans font-medium hover:bg-surface/50 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-    >
-      {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-      Save as draft
-    </button>
-  )
-}
-
-function ContinueButton({ disabled }: { disabled: boolean }) {
-  const { pending } = useFormStatus()
-  return (
-    <button
-      type="submit"
-      disabled={pending || disabled}
-      className="w-full h-11 rounded-full bg-accent-copper text-white text-sm font-sans font-medium hover:opacity-90 transition-opacity duration-150 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-    >
-      {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-      Continue → Configure council
-    </button>
   )
 }
