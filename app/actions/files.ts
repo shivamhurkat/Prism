@@ -117,17 +117,26 @@ export async function uploadDecisionFile(
     console.log(`[file] error ${reason}`)
   }
 
-  await supabase
-    .from('decision_files')
-    .update({ extracted_text: text, parse_status, parse_skipped_reason })
-    .eq('id', fileId)
+  const { error: updateError } = await supabase
+  .from('decision_files')
+  .update({ extracted_text: text, parse_status, parse_skipped_reason })
+  .eq('id', fileId)
 
+if (updateError) {
+  console.log('[file] update error', updateError.message)
+  return { error: updateError.message }
+}
+
+try {
   await logEvent('file_uploaded', {
     decision_id: decisionId,
     file_type: mime,
     byte_size: file.size,
     parsed: parse_status === 'ready',
   })
+} catch (err) {
+  console.log('[file] logEvent error', err instanceof Error ? err.message : String(err))
+}
 
   revalidatePath(`/dashboard/d/${decisionId}`)
 
