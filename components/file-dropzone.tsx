@@ -44,7 +44,16 @@ export function FileDropzone({ onFilesSelected }: FileDropzoneProps) {
   function validateAndEmit(rawFiles: FileList | File[]) {
     const valid: File[] = []
     for (const file of Array.from(rawFiles)) {
-      const mime = file.type || 'application/octet-stream'
+      let mime = file.type || 'application/octet-stream'
+const lowerName = file.name.toLowerCase()
+
+if (mime === 'application/octet-stream') {
+  if (lowerName.endsWith('.md') || lowerName.endsWith('.markdown')) {
+    mime = 'text/markdown'
+  } else if (lowerName.endsWith('.txt')) {
+    mime = 'text/plain'
+  }
+}
       if (!ALLOWED_MIMES.has(mime)) {
         toast.error(`${file.name}: unsupported file type (${mimeLabel(mime) || mime})`)
         continue
