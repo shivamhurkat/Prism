@@ -237,3 +237,46 @@ For any AI call with a multi-second wait: cycle through static messages every 2s
 - `[provider] validating {provider}` / `[provider] valid {provider}` / `[provider] invalid {provider} {reason}` (in `validateProviderKey`)
 - `[provider] saved {provider}` (in `saveApiKey`)
 - `[provider] switched {from}→{to}` (in `setPreferredProvider`)
+
+---
+
+## Step 8
+
+### Decision workspace wizard
+- `/dashboard/d/[id]` is now a **5-step wizard** (context · clarifications · council · scenarios · review) driven by `?step` URL param. No step's content is visible unless it's the current step. Refreshing or sharing a URL preserves step. `searchParams` is a `Promise` in Next 16: `const sp = await searchParams`.
+- **Reachability** is derived from data (not DB state) via `lib/wizard/reachability.ts`. Thresholds: context=always, clarifications/council=title≥1 char AND question≥50 chars, scenarios=agents≥2, review=scenarios≥2. `getStepStatus` returns `completed | current | reachable | unreachable`.
+- **Motion transitions**: `AnimatePresence mode="wait"` from `motion/react`; `initial {opacity:0, x:16}` → `animate {opacity:1, x:0}` → `exit {opacity:0, x:-16}`, 220ms easeOut, keyed on currentStep.
+
+### Wizard file map
+- `lib/wizard/reachability.ts` — `WizardStep`, `WIZARD_STEPS`, `StepData`, `getStepStatus`, `canAdvanceFrom`, `nextStep`, `prevStep`, `STEP_LABELS`, `ADVANCE_HINTS`
+- `components/decision-workspace.tsx` — top-level client shell; sticky top bar (breadcrumb, title read-only, status pill, last-saved relative); renders stepper, step frame with content, wizard nav
+- `components/decision-stepper.tsx` — desktop: 5 circle nodes with connecting hairlines (copper for past, border for future); mobile: "Step N of 5 · Label" + copper progress bar
+- `components/step-frame.tsx` — `AnimatePresence` wrapper keyed on currentStep
+- `components/wizard-nav.tsx` — desktop: inline at bottom with border-t; mobile: fixed bottom z-30 with backdrop-blur; Back disabled on context, Next hidden on review, disabled with `ADVANCE_HINTS` hint text when thresholds not met
+- `components/wizard/context-step.tsx` — renders EditableField (title, question, context_text) + FileSection; heading rendered by the wrapper (only step that does this)
+- `components/wizard/clarifications-step.tsx` — renders ClarificationsSection + skip link when no clarifications exist
+- `components/wizard/council-step.tsx` — renders AgentCouncilSection verbatim
+- `components/wizard/scenarios-step.tsx` — renders ScenariosSection verbatim
+- `components/wizard/review-step.tsx` — renders PreRunReview verbatim
+- All prior section components (ClarificationsSection, AgentCouncilSection) keep their own headings. ContextStep is the only wizard wrapper that renders a heading.
+
+### Scenarios architecture
+- Mirrors agents exactly. AI generates 3–5 non-Premortem scenarios + locked Premortem at last position.
+- **`lib/ai/premortem.ts`** — `PREMORTEM` constant (name, description, assumptions, time_horizon, locked=true)
+- **`lib/ai/prompts/scenarios.ts`** — `SCENARIOS_SYSTEM` + `buildScenariosUserPrompt`
+- **`app/actions/scenarios.ts`** — `generateScenarios`, `updateScenario`, `addScenario`, `deleteScenario`, `reorderScenarios`. Same locked-row rules as agents: name immutable for locked, description/assumptions/time_horizon editable, cannot delete Premortem, snaps to last on reorder.
+- **`components/scenario-card.tsx`** — mirrors AgentCard; read mode shows description + assumptions parsed as bullet list when "- "-prefixed; edit mode has name (disabled if locked), description, assumptions (with "One per line, starting with '- '" helper), time_horizon
+- **`components/scenarios-section.tsx`** — mirrors AgentCouncilSection; three states (empty/loading/loaded); dnd-kit reorder; Premortem locked
+- `scenarios` table already existed in `0001_initial.sql`
+
+### Cost estimator + pre-run review
+- **`lib/ai/estimator.ts`** — `estimateRunCost({ agentsCount, scenariosCount, contextChars, provider })`. Formula: contextTokens=chars/4, analysisCalls=agents×scenarios, critiqueCalls=agents, totalCalls=analysisCalls+critiqueCalls+1. Input tokens: analysisCalls×(contextTokens+1200)+critiqueCalls×3500+9000. Output tokens: analysisCalls×1000+critiqueCalls×700+3000. Always uses `MODELS[provider].heavy`. Minutes: max(2, ceil(totalCalls×25/60/3)) — 3 concurrent, 25s avg.
+- **`components/pre-run-review.tsx`** — LiquidGlass prominent card: (A) 4-col metric grid (agents/scenarios/deliberations/files), (B) agents×scenarios matrix grid with lock icons, (C) cost+time flex row, (D) Run button disabled when !hasApiKey OR agents<2 OR scenarios<2 with specific helper text. Enabled click toasts step-9 placeholder and logs `[run] requested`.
+
+### Console.log groups added in step 8
+- `[wizard] navigated {from}→{to}` (in DecisionStepper and WizardNav on step change)
+- `[scenarios] generating {decisionId}` / `[scenarios] generated {n} +1 Premortem cost {$}` / `[scenarios] error {reason}` (in `generateScenarios`)
+- `[run] requested { decisionId, estimate }` (in PreRunReview on Run click)
+
+### Future note
+When the deliberation engine ships in step 9, a 6th "Run" stepper state will be added — it's not part of the 5 wizard steps; running/completed status takes over the workspace.
