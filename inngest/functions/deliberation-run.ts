@@ -17,7 +17,7 @@ export const deliberationRun = inngest.createFunction(
     id: 'deliberation-run',
     name: 'Deliberation Run',
     triggers: [{ event: 'deliberation/start' }],
-    concurrency: { limit: 30 },
+    concurrency: { limit: 5 },
     retries: 1,
   },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
