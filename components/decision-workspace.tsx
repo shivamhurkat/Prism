@@ -14,7 +14,7 @@ import type { ApiKeyStatus } from '@/app/actions/api-keys'
 import type { Provider } from '@/lib/ai/models'
 
 type FileRow = Tables<'decision_files'>
-type DecisionStatus = Tables<'decisions'>['status']
+type DecisionStatus = NonNullable<Tables<'decisions'>['status']>
 
 interface Decision {
   id: string
@@ -72,12 +72,14 @@ const statusConfig: Record<DecisionStatus, { label: string; className: string }>
   configuring: { label: 'Configuring', className: 'border border-accent-copper text-accent-copper' },
   ready: { label: 'Ready', className: 'border border-accent-copper text-accent-copper' },
   running: { label: 'Running', className: 'bg-accent-copper text-white' },
+  synthesizing: { label: 'Synthesizing', className: 'bg-accent-copper text-white' },
   completed: { label: 'Completed', className: 'bg-success/15 text-success' },
   archived: { label: 'Archived', className: 'bg-border/60 text-muted-foreground' },
   failed: { label: 'Failed', className: 'bg-destructive/15 text-destructive' },
+  cancelled: { label: 'Cancelled', className: 'bg-border/60 text-muted-foreground' },
 }
 
-const FROZEN_STATUSES = new Set<DecisionStatus>(['running', 'completed'])
+const FROZEN_STATUSES = new Set<DecisionStatus>(['running', 'synthesizing', 'completed'])
 
 function formatRelative(dateStr: string): string {
   const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000)

@@ -280,3 +280,58 @@ For any AI call with a multi-second wait: cycle through static messages every 2s
 
 ### Future note
 When the deliberation engine ships in step 9, a 6th "Run" stepper state will be added — it's not part of the 5 wizard steps; running/completed status takes over the workspace.
+
+---
+
+## Step 9
+
+### Deliberation engine architecture
+- **Inngest function** `deliberation-run` triggered by `deliberation/start` event; three sequential phases: (1) analysis batched ×4 in parallel, (2) critique batched ×4 in parallel, (3) synthesis single call. Cancellation gates between phases via `run.status === 'cancelled'` checks.
+- **Inngest v4 API**: `createFunction(options, handler)` — 2 args. Triggers live inside `options.triggers`. Route handler at `app/api/inngest/route.ts`; `signingKey` read automatically from `INNGEST_SIGNING_KEY` env var (not passed to `serve()`).
+- **Local dev**: Run `npx inngest-cli@latest dev` in a second terminal alongside `npm run dev`. The CLI proxies events to your local server.
+
+### Prompts and schemas
+- `lib/ai/prompts/analysis.ts` — `ANALYSIS_SYSTEM`, `buildAnalysisUserPrompt`, `AnalysisSchema`. Placeholders `{{AGENT_NAME}}`, `{{AGENT_ROLE}}`, `{{AGENT_PERSPECTIVE}}`, `{{AGENT_BIASES}}` substituted at runtime via `fillSystemPlaceholders`.
+- `lib/ai/prompts/critique.ts` — `CRITIQUE_SYSTEM`, `buildCritiqueUserPrompt`, `CritiqueSchema`.
+- `lib/ai/prompts/synthesis.ts` — `SYNTHESIS_SYSTEM`, `buildSynthesisUserPrompt`, `SynthesisSchema`.
+- All three passes use `modelTier='heavy'`.
+
+### Task processors
+- `lib/ai/run-processor.ts` — `processAnalysisTask`, `processCritiqueTask`, `processSynthesisTask`.
+- Per-task failure semantics: analysis and critique failures are tolerated (logged, `updateTaskFailed`, no rethrow). Synthesis failure is fatal — retried once internally, then marks whole run failed.
+- Synthesis success inserts into `run_synthesis` table with 7 fields (verdict, confidence_pct, confidence_reasoning, top_risks, decision_criteria, what_would_change_my_mind, summary_text).
+
+### DB helpers (service role)
+- `lib/db/run-helpers.ts` uses `SUPABASE_SERVICE_ROLE_KEY` to bypass RLS. This is the **only** place outside admin paths where RLS is bypassed. Inngest functions have no user session; service-role is required. The security reasoning is documented in the file header.
+
+### Status state machine
+- `decisions.status`: `draft → configuring → running → synthesizing → completed | failed | cancelled`
+- `cancelled` and `failed` return decision to editable states (`configuring`).
+- `runs.status`: `pending → running → synthesizing → completed | failed | cancelled`
+- Both tables updated via migration `0007_status_cancelled.sql`.
+
+### Live progress UI
+- Status-based view switching in `/dashboard/d/[id]/page.tsx`:
+  - `running | synthesizing` → `<LiveRunView>` (client component)
+  - `completed` → `<CompletedRunPlaceholder>` (temporary until step 10)
+  - `failed` → wizard with `<FailedBanner>` + "Try again" button
+  - `cancelled` → wizard with muted cancelled banner
+  - `archived` → `<ArchivedNotice>` stub
+- `LiveRunView` subscribes to Supabase Realtime channels on `runs` and `run_tasks`. On `completed | failed` run update, calls `router.refresh()` to trigger server re-render and view switch.
+- `CompletedRunPlaceholder` shows verdict summary + confidence% + actual cost + collapsible raw outputs.
+
+### Server actions
+- `app/actions/runs.ts`: `startDeliberation(decisionId)`, `cancelRun(runId)`, `retryFailedRun(decisionId)`.
+- `startDeliberation` stores cost estimate on `decisions.cost_estimate_usd` (runs table has no estimate column).
+
+### Realtime setup (SQL)
+- `supabase/migrations/0006_enable_realtime.sql` — `ALTER PUBLICATION supabase_realtime ADD TABLE runs; ADD TABLE run_tasks;` — paste into Supabase SQL Editor.
+- `supabase/migrations/0007_status_cancelled.sql` — drops and recreates status check constraints for both tables — paste into Supabase SQL Editor.
+
+### Console.log groups added in step 9
+- `[run] started {runId} tasks={n} estimate=${cost}` (in `startDeliberation`)
+- `[run] cancelled {runId}` (in `cancelRun`)
+- `[run-task] analysis {agentName}×{scenarioName} start` / `done {durationMs}ms` / `failed {reason}` (in `processAnalysisTask`)
+- `[run-task] critique {agentName} start` / `done {durationMs}ms` / `failed {reason}` (in `processCritiqueTask`)
+- `[run-task] synthesis {taskId} start` / `done {durationMs}ms` / `failed {reason}` (in `processSynthesisTask`)
+- `[realtime] subscribed run={runId}` / `update task={taskId} status={status}` (in `LiveRunView`)

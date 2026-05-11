@@ -16,14 +16,16 @@ function relativeTime(dateStr: string): string {
   return `${day} day${day === 1 ? '' : 's'} ago`
 }
 
-const statusConfig: Record<DecisionStatus, { label: string; className: string }> = {
+const statusConfig: Record<DecisionStatus, { label: string; className: string; dot?: boolean }> = {
   draft: { label: 'Draft', className: 'bg-border/60 text-muted-foreground' },
   configuring: { label: 'Configuring', className: 'border border-accent-copper text-accent-copper' },
   ready: { label: 'Ready', className: 'border border-accent-copper text-accent-copper' },
-  running: { label: 'Running', className: 'bg-accent-copper text-white' },
+  running: { label: 'Running', className: 'border border-accent-copper text-accent-copper', dot: true },
+  synthesizing: { label: 'Synthesizing', className: 'bg-accent-copper text-white', dot: true },
   completed: { label: 'Completed', className: 'bg-success/15 text-success' },
   archived: { label: 'Archived', className: 'bg-border/60 text-muted-foreground' },
   failed: { label: 'Failed', className: 'bg-destructive/15 text-destructive' },
+  cancelled: { label: 'Cancelled', className: 'bg-border/60 text-muted-foreground' },
 }
 
 export function DecisionList({
@@ -50,7 +52,7 @@ export function DecisionList({
 
       <div className="space-y-3">
         {decisions.map((d) => {
-          const { label, className } = statusConfig[d.status]
+          const { label, className, dot } = statusConfig[d.status]
           const href = `/dashboard/d/${d.id}`
           return (
             <Link
@@ -75,8 +77,9 @@ export function DecisionList({
                 </div>
                 <div className="flex flex-col items-end gap-2 shrink-0">
                   <span
-                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-sans font-medium uppercase tracking-wide ${className}`}
+                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-sans font-medium uppercase tracking-wide ${className}`}
                   >
+                    {dot && <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />}
                     {label}
                   </span>
                   <span className="text-xs text-muted-foreground font-sans">

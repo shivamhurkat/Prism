@@ -1,9 +1,12 @@
 'use client'
 
+import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Lock } from 'lucide-react'
+import { Lock, Loader2 } from 'lucide-react'
 import { LiquidGlass } from '@/components/ui/liquid-glass'
 import { estimateRunCost } from '@/lib/ai/estimator'
+import { startDeliberation } from '@/app/actions/runs'
 import type { Provider } from '@/lib/ai/models'
 
 interface Agent {
@@ -41,6 +44,9 @@ export function PreRunReview({
   agents,
   scenarios,
 }: Props) {
+  const router = useRouter()
+  const [isPending, startTransition] = useTransition()
+
   const estimate = estimateRunCost({ agentsCount, scenariosCount, contextChars, provider })
   const deliberations = agentsCount * scenariosCount
 
@@ -56,7 +62,7 @@ export function PreRunReview({
   }
 
   function handleRun() {
-    if (!canRun) return
+    if (!canRun || isPending) return
     console.log('[run] requested', {
       decisionId,
       estimate: {
@@ -66,7 +72,14 @@ export function PreRunReview({
         modelUsed: estimate.modelUsed,
       },
     })
-    toast.info('Deliberation engine ships in step 9. Wizard wiring complete.')
+    startTransition(async () => {
+      const result = await startDeliberation(decisionId)
+      if (result.ok) {
+        router.push(`/dashboard/d/${decisionId}`)
+      } else {
+        toast.error(result.error)
+      }
+    })
   }
 
   return (
@@ -190,10 +203,11 @@ export function PreRunReview({
           <button
             type="button"
             onClick={handleRun}
-            disabled={!canRun}
-            className="w-full md:max-w-[280px] h-12 flex items-center justify-center rounded-full bg-accent-copper text-white text-sm font-sans font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={!canRun || isPending}
+            className="w-full md:max-w-[280px] h-12 flex items-center justify-center gap-2 rounded-full bg-accent-copper text-white text-sm font-sans font-medium hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Run deliberation
+            {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            {isPending ? 'Starting…' : 'Run deliberation'}
           </button>
           {disabledReason && (
             <p className="text-xs text-muted-foreground font-sans text-center max-w-xs">

@@ -57,7 +57,7 @@ export type Database = {
           title: string
           question: string | null
           context_text: string | null
-          status: 'draft' | 'configuring' | 'ready' | 'running' | 'completed' | 'archived' | 'failed'
+          status: 'draft' | 'configuring' | 'ready' | 'running' | 'synthesizing' | 'completed' | 'archived' | 'failed' | 'cancelled'
           cost_estimate_usd: number | null
           actual_cost_usd: number | null
           created_at: string
@@ -70,7 +70,7 @@ export type Database = {
           title: string
           question?: string | null
           context_text?: string | null
-          status?: 'draft' | 'configuring' | 'ready' | 'running' | 'completed' | 'archived' | 'failed'
+          status?: 'draft' | 'configuring' | 'ready' | 'running' | 'synthesizing' | 'completed' | 'archived' | 'failed' | 'cancelled'
           cost_estimate_usd?: number | null
           actual_cost_usd?: number | null
           created_at?: string
@@ -81,7 +81,7 @@ export type Database = {
           title?: string
           question?: string | null
           context_text?: string | null
-          status?: 'draft' | 'configuring' | 'ready' | 'running' | 'completed' | 'archived' | 'failed'
+          status?: 'draft' | 'configuring' | 'ready' | 'running' | 'synthesizing' | 'completed' | 'archived' | 'failed' | 'cancelled'
           cost_estimate_usd?: number | null
           actual_cost_usd?: number | null
           updated_at?: string
@@ -224,7 +224,7 @@ export type Database = {
         Row: {
           id: string
           decision_id: string
-          status: 'pending' | 'running' | 'synthesizing' | 'completed' | 'failed'
+          status: 'pending' | 'running' | 'synthesizing' | 'completed' | 'failed' | 'cancelled'
           progress_pct: number
           started_at: string | null
           completed_at: string | null
@@ -237,7 +237,7 @@ export type Database = {
         Insert: {
           id?: string
           decision_id: string
-          status?: 'pending' | 'running' | 'synthesizing' | 'completed' | 'failed'
+          status?: 'pending' | 'running' | 'synthesizing' | 'completed' | 'failed' | 'cancelled'
           progress_pct?: number
           started_at?: string | null
           completed_at?: string | null
@@ -248,7 +248,7 @@ export type Database = {
           created_at?: string
         }
         Update: {
-          status?: 'pending' | 'running' | 'synthesizing' | 'completed' | 'failed'
+          status?: 'pending' | 'running' | 'synthesizing' | 'completed' | 'failed' | 'cancelled'
           progress_pct?: number
           started_at?: string | null
           completed_at?: string | null
@@ -414,4 +414,5 @@ export type Tables<T extends keyof Database['public']['Tables']> =
 
 export type DecisionStatus = Tables<'decisions'>['status']
 export type RunStatus = Tables<'runs'>['status']
+export type RunTaskStatus = Tables<'run_tasks'>['status']
 export type ParseStatus = Tables<'decision_files'>['parse_status']
