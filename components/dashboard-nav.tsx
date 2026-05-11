@@ -19,9 +19,10 @@ interface DashboardNavProps {
   email: string
   avatarUrl: string | null
   displayName: string | null
+  hasNoKeys?: boolean
 }
 
-export function DashboardNav({ email, avatarUrl, displayName }: DashboardNavProps) {
+export function DashboardNav({ email, avatarUrl, displayName, hasNoKeys = false }: DashboardNavProps) {
   const initial = ((displayName || email || '?')[0] ?? '?').toUpperCase()
   const router = useRouter()
   const [isSigningOut, startSignOut] = useTransition()
@@ -58,7 +59,7 @@ export function DashboardNav({ email, avatarUrl, displayName }: DashboardNavProp
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
-                className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-copper/40"
+                className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-copper/40 relative"
                 aria-label="User menu"
               >
                 <Avatar className="h-8 w-8">
@@ -69,6 +70,9 @@ export function DashboardNav({ email, avatarUrl, displayName }: DashboardNavProp
                     {initial}
                   </AvatarFallback>
                 </Avatar>
+                {hasNoKeys && (
+                  <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-accent-copper border-2 border-background" />
+                )}
               </button>
             </DropdownMenuTrigger>
 

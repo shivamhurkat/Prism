@@ -37,5 +37,6 @@ export function decryptApiKey(ciphertext: string): string {
 
 export function maskApiKey(plaintext: string): string {
   const last4 = plaintext.slice(-4)
-  return `sk-ant-...••••••${last4}`
+  if (plaintext.startsWith('sk-ant')) return `sk-ant-...••••••${last4}`
+  return `...••••••${last4}`
 }

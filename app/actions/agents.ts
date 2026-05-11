@@ -1,13 +1,27 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { z } from 'zod'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { buildDecisionContext } from '@/lib/ai/context'
 import { callJsonModel, AiError } from '@/lib/ai/call'
-import { MODELS } from '@/lib/ai/models'
 import { AGENTS_SYSTEM, buildAgentsUserPrompt } from '@/lib/ai/prompts/agents'
 import { DEVILS_ADVOCATE } from '@/lib/ai/devils-advocate'
 import { logEvent } from '@/lib/events'
+
+const AgentsSchema = z.object({
+  agents: z
+    .array(
+      z.object({
+        name: z.string().min(2).max(80),
+        role: z.string().max(200),
+        perspective: z.string().min(20).max(600),
+        biases: z.string().max(400),
+      })
+    )
+    .min(3)
+    .max(7),
+})
 
 type AgentFields = {
   name?: string
@@ -49,7 +63,6 @@ export async function generateAgentCouncil(
 
   const service = createServiceClient()
 
-  // Fetch decision data, files, and latest clarification generation
   const [{ data: decisionFull }, { data: files }, { data: latestGenRow }] = await Promise.all([
     supabase
       .from('decisions')
@@ -72,7 +85,6 @@ export async function generateAgentCouncil(
 
   if (!decisionFull) return { error: 'Decision not found.' }
 
-  // Fetch latest clarifications if they exist
   let clarifications: Array<{ question: string; user_answer: string | null }> = []
   if (latestGenRow?.generation_id) {
     const { data: cRows } = await supabase
@@ -95,41 +107,22 @@ export async function generateAgentCouncil(
       userId: user.id,
       decisionId,
       kind: 'agents',
-      model: MODELS.light,
+      modelTier: 'light',
       system: AGENTS_SYSTEM,
       user: buildAgentsUserPrompt(context),
+      schema: AgentsSchema,
+      schemaName: 'AgentCouncil',
     })
 
-    const payload = data as { agents?: unknown[] }
-    if (!Array.isArray(payload?.agents) || payload.agents.length < 3 || payload.agents.length > 7) {
-      return { error: 'Model returned unexpected structure.' }
-    }
+    await service.from('agent_charters').delete().eq('decision_id', decisionId)
 
-    type RawAgent = { name?: unknown; role?: unknown; perspective?: unknown; biases?: unknown }
-    const validated = (payload.agents as RawAgent[]).filter(
-      a =>
-        typeof a.name === 'string' && a.name.length >= 1 && a.name.length <= 80 &&
-        typeof a.role === 'string' && a.role.length >= 1 && a.role.length <= 200 &&
-        typeof a.perspective === 'string' && a.perspective.length >= 1 && a.perspective.length <= 600 &&
-        typeof a.biases === 'string' && a.biases.length >= 1 && a.biases.length <= 400
-    )
-
-    if (validated.length < 3) return { error: 'Not enough valid agents returned.' }
-
-    // Delete all existing unlocked agents (clean slate)
-    await service
-      .from('agent_charters')
-      .delete()
-      .eq('decision_id', decisionId)
-
-    // Insert AI-generated agents + Devil's Advocate
     const rows = [
-      ...validated.map((a, i) => ({
+      ...data.agents.map((a, i) => ({
         decision_id: decisionId,
-        name: a.name as string,
-        role: a.role as string,
-        perspective: a.perspective as string,
-        biases: a.biases as string,
+        name: a.name,
+        role: a.role,
+        perspective: a.perspective,
+        biases: a.biases,
         locked: false,
         position: i,
       })),
@@ -140,7 +133,7 @@ export async function generateAgentCouncil(
         perspective: DEVILS_ADVOCATE.perspective,
         biases: DEVILS_ADVOCATE.biases,
         locked: true,
-        position: validated.length,
+        position: data.agents.length,
       },
     ]
 
@@ -150,7 +143,6 @@ export async function generateAgentCouncil(
       return { error: insertError.message }
     }
 
-    // Advance status to configuring if still draft
     if (decision.status === 'draft') {
       await supabase
         .from('decisions')
@@ -160,12 +152,8 @@ export async function generateAgentCouncil(
     }
 
     const count = rows.length
-    console.log('[agents] generated', validated.length, '+1 DA =', count, 'cost', usage.costUsd.toFixed(6))
-    await logEvent('agents_generated', {
-      decision_id: decisionId,
-      count,
-      costUsd: usage.costUsd,
-    })
+    console.log('[agents] generated', data.agents.length, '+1 DA =', count, 'cost', usage.costUsd.toFixed(6))
+    await logEvent('agents_generated', { decision_id: decisionId, count, costUsd: usage.costUsd })
 
     revalidatePath(`/dashboard/d/${decisionId}`)
     return { ok: true, count }
@@ -184,9 +172,7 @@ export async function updateAgent(
   fields: AgentFields
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'Not authenticated.' }
 
   const { data: agent } = await supabase
@@ -197,7 +183,6 @@ export async function updateAgent(
 
   if (!agent) return { ok: false, error: 'Agent not found.' }
 
-  // Verify ownership via decision
   const { data: decision } = await supabase
     .from('decisions')
     .select('id')
@@ -207,12 +192,10 @@ export async function updateAgent(
 
   if (!decision) return { ok: false, error: 'Access denied.' }
 
-  // Locked rows: name is immutable
   if (agent.locked && fields.name !== undefined && fields.name !== agent.name) {
-    return { ok: false, error: "Locked agent — name cannot be changed." }
+    return { ok: false, error: 'Locked agent — name cannot be changed.' }
   }
 
-  // Validate lengths
   if (fields.name !== undefined && (fields.name.length < 1 || fields.name.length > 80)) {
     return { ok: false, error: 'Name must be 1–80 characters.' }
   }
@@ -235,10 +218,7 @@ export async function updateAgent(
 
   if (fieldsChanged.length === 0) return { ok: true }
 
-  const { error } = await supabase
-    .from('agent_charters')
-    .update(update)
-    .eq('id', agentId)
+  const { error } = await supabase.from('agent_charters').update(update).eq('id', agentId)
 
   if (error) {
     console.log('[agents] updated error', error.message)
@@ -264,7 +244,6 @@ export async function addAgent(
 
   const service = createServiceClient()
 
-  // Find Devil's Advocate position
   const { data: daRow } = await supabase
     .from('agent_charters')
     .select('id, position')
@@ -275,12 +254,8 @@ export async function addAgent(
   const daPosition = daRow?.position ?? 0
   const newPosition = daRow ? daPosition : 0
 
-  // Bump Devil's Advocate position by 1
   if (daRow) {
-    await service
-      .from('agent_charters')
-      .update({ position: daPosition + 1 })
-      .eq('id', daRow.id)
+    await service.from('agent_charters').update({ position: daPosition + 1 }).eq('id', daRow.id)
   }
 
   const { error } = await service.from('agent_charters').insert({
@@ -308,9 +283,7 @@ export async function deleteAgent(
   agentId: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { ok: false, error: 'Not authenticated.' }
 
   const { data: agent } = await supabase
@@ -345,7 +318,6 @@ export async function deleteAgent(
     return { ok: false, error: error.message }
   }
 
-  // Renumber remaining positions
   const { data: remaining } = await supabase
     .from('agent_charters')
     .select('id, position')
@@ -355,10 +327,7 @@ export async function deleteAgent(
   if (remaining) {
     for (let i = 0; i < remaining.length; i++) {
       if (remaining[i].position !== i) {
-        await service
-          .from('agent_charters')
-          .update({ position: i })
-          .eq('id', remaining[i].id)
+        await service.from('agent_charters').update({ position: i }).eq('id', remaining[i].id)
       }
     }
   }
@@ -377,7 +346,6 @@ export async function reorderAgents(
   if (!user) return { ok: false, error: 'Not authenticated.' }
   if (!decision) return { ok: false, error: 'Decision not found.' }
 
-  // Verify all IDs belong to this decision
   const { data: agents } = await supabase
     .from('agent_charters')
     .select('id, locked')
@@ -390,7 +358,6 @@ export async function reorderAgents(
     if (!agentMap.has(id)) return { ok: false, error: 'Invalid agent id.' }
   }
 
-  // Enforce Devil's Advocate stays last
   let finalOrder = [...orderedIds]
   const daId = agents.find(a => a.locked)?.id
   if (daId) {
@@ -400,10 +367,7 @@ export async function reorderAgents(
 
   const service = createServiceClient()
   for (let i = 0; i < finalOrder.length; i++) {
-    await service
-      .from('agent_charters')
-      .update({ position: i })
-      .eq('id', finalOrder[i])
+    await service.from('agent_charters').update({ position: i }).eq('id', finalOrder[i])
   }
 
   console.log('[agents] reordered', decisionId)

@@ -16,25 +16,41 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { saveApiKey, deleteApiKey } from '@/app/actions/api-keys'
-import type { ApiKeyStatus } from '@/app/actions/api-keys'
+import type { Provider } from '@/lib/ai/models'
+import type { SingleKeyStatus } from '@/app/actions/api-keys'
+
+const PROVIDER_META: Record<Provider, { placeholder: string; helpUrl: string; helpLabel: string }> = {
+  anthropic: {
+    placeholder: 'sk-ant-api03-...',
+    helpUrl: 'https://console.anthropic.com/settings/keys',
+    helpLabel: 'Anthropic Console →',
+  },
+  google: {
+    placeholder: 'AIzaSy...',
+    helpUrl: 'https://aistudio.google.com/apikey',
+    helpLabel: 'Google AI Studio →',
+  },
+}
 
 interface ApiKeyFormProps {
-  initialStatus: ApiKeyStatus
+  provider: Provider
+  initialStatus: SingleKeyStatus
   onSuccess?: () => void
 }
 
-export function ApiKeyForm({ initialStatus, onSuccess }: ApiKeyFormProps) {
+export function ApiKeyForm({ provider, initialStatus, onSuccess }: ApiKeyFormProps) {
   const [status, setStatus] = useState(initialStatus)
   const [showForm, setShowForm] = useState(!initialStatus.hasKey)
   const [showKey, setShowKey] = useState(false)
   const [isDeleting, startDelete] = useTransition()
+  const meta = PROVIDER_META[provider]
 
   const [, formAction, isPending] = useActionState(
     async (_prev: unknown, formData: FormData) => {
       const result = await saveApiKey(formData)
       if ('error' in result) {
         toast.error(result.error === 'invalid_key'
-          ? 'Invalid API key — check your Anthropic console.'
+          ? 'Invalid API key — check your console.'
           : result.error === 'rate_limited'
           ? 'API key is rate limited. Try again shortly.'
           : result.error)
@@ -51,7 +67,7 @@ export function ApiKeyForm({ initialStatus, onSuccess }: ApiKeyFormProps) {
 
   function handleDelete() {
     startDelete(async () => {
-      const result = await deleteApiKey()
+      const result = await deleteApiKey(provider)
       if ('error' in result) {
         toast.error(result.error)
         return
@@ -116,12 +132,13 @@ export function ApiKeyForm({ initialStatus, onSuccess }: ApiKeyFormProps) {
 
   return (
     <form action={formAction} className="space-y-4">
+      <input type="hidden" name="provider" value={provider} />
       <div className="space-y-2">
         <div className="relative">
           <input
             name="apiKey"
             type={showKey ? 'text' : 'password'}
-            placeholder="sk-ant-api03-..."
+            placeholder={meta.placeholder}
             autoComplete="off"
             className="w-full h-11 rounded-[10px] border border-border bg-surface px-4 pr-12 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-copper/40 transition"
           />
@@ -136,12 +153,12 @@ export function ApiKeyForm({ initialStatus, onSuccess }: ApiKeyFormProps) {
         </div>
         <p className="text-xs text-muted-foreground font-sans">
           <a
-            href="https://console.anthropic.com/settings/keys"
+            href={meta.helpUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="hover:text-foreground transition-colors underline underline-offset-2"
           >
-            Where do I find this? →
+            {meta.helpLabel}
           </a>
         </p>
       </div>

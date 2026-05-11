@@ -2,7 +2,8 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { LiquidGlass } from '@/components/ui/liquid-glass'
-import { ApiKeyForm } from '@/components/api-key-form'
+import { ProviderCard } from '@/components/provider-card'
+import { PreferredProviderSwitcher } from '@/components/preferred-provider-switcher'
 import { getApiKeyStatus } from '@/app/actions/api-keys'
 import { signOut } from '@/app/actions/auth'
 
@@ -56,6 +57,11 @@ export default async function SettingsPage() {
       })
     : '—'
 
+  const anthropicStatus = apiKeyStatus.keys.find(k => k.provider === 'anthropic')
+  const googleStatus = apiKeyStatus.keys.find(k => k.provider === 'google')
+  const bothConnected =
+    (anthropicStatus?.hasKey ?? false) && (googleStatus?.hasKey ?? false)
+
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-[760px] mx-auto px-6 py-12 space-y-8">
@@ -72,15 +78,29 @@ export default async function SettingsPage() {
           Settings
         </h1>
 
-        {/* API key section */}
-        <LiquidGlass id="api-key" className="p-8 space-y-5">
+        {/* API keys section */}
+        <LiquidGlass id="api-key" className="p-8 space-y-6">
           <div>
-            <h2 className="font-display text-[22px] font-light text-foreground">API key</h2>
+            <h2 className="font-display text-[22px] font-light text-foreground">API keys</h2>
             <p className="text-sm text-muted-foreground font-sans mt-1">
-              Required for AI features. Use your own Anthropic key for full transparency on cost.
+              Connect one or both providers. Anthropic (Opus/Sonnet) for highest quality. Google (Gemini) for cheap iteration.
             </p>
           </div>
-          <ApiKeyForm initialStatus={apiKeyStatus} />
+
+          {bothConnected && (
+            <PreferredProviderSwitcher current={apiKeyStatus.preferredProvider} />
+          )}
+
+          <div className="space-y-4">
+            <ProviderCard
+              provider="anthropic"
+              status={anthropicStatus ?? { hasKey: false }}
+            />
+            <ProviderCard
+              provider="google"
+              status={googleStatus ?? { hasKey: false }}
+            />
+          </div>
         </LiquidGlass>
 
         {/* Profile section */}

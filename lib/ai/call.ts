@@ -1,10 +1,17 @@
-import { getAnthropicClientForUser } from '@/lib/ai/anthropic'
+import { generateObject, NoObjectGeneratedError } from 'ai'
+import { z } from 'zod'
 import { getCostUsd } from '@/lib/ai/pricing'
 import { logAiCall } from '@/lib/events'
+import { getProviderForUser } from '@/lib/ai/providers'
 
 export class AiError extends Error {
   constructor(
-    public readonly code: 'no_api_key' | 'invalid_response' | 'rate_limited' | 'server_error',
+    public readonly code:
+      | 'no_api_key'
+      | 'invalid_response'
+      | 'rate_limited'
+      | 'server_error'
+      | 'no_key_for_provider',
     message?: string
   ) {
     super(message ?? code)
@@ -12,95 +19,74 @@ export class AiError extends Error {
   }
 }
 
-interface CallJsonModelOptions {
+interface CallJsonModelOptions<T> {
   userId: string
-  decisionId: string
+  decisionId?: string
   kind: string
-  model: string
+  modelTier: import('@/lib/ai/models').ModelTier
   system: string
   user: string
+  schema: z.ZodSchema<T>
+  schemaName: string
 }
 
-interface CallJsonModelResult {
-  data: unknown
+interface CallJsonModelResult<T> {
+  data: T
   usage: { input: number; output: number; costUsd: number }
 }
 
-export async function callJsonModel({
+export async function callJsonModel<T>({
   userId,
   decisionId,
   kind,
-  model,
+  modelTier,
   system,
-  user: userMessage,
-}: CallJsonModelOptions): Promise<CallJsonModelResult> {
-  const client = await getAnthropicClientForUser(userId)
-  if (!client) throw new AiError('no_api_key')
+  user: userPrompt,
+  schema,
+  schemaName,
+}: CallJsonModelOptions<T>): Promise<CallJsonModelResult<T>> {
+  const resolved = await getProviderForUser(userId)
+  if (!resolved) throw new AiError('no_api_key')
 
   const startMs = Date.now()
+  const modelId = resolved.modelIdFor(modelTier)
+  const model = resolved.modelFor(modelTier)
 
-  async function attempt(messages: Array<{ role: 'user' | 'assistant'; content: string }>) {
-    const response = await client!.messages.create({
+  try {
+    const { object, usage } = await generateObject({
       model,
-      max_tokens: 4096,
+      schema,
+      schemaName,
       system,
-      messages,
+      prompt: userPrompt,
+      maxRetries: 2,
     })
 
-    const raw = response.content[0]?.type === 'text' ? response.content[0].text : ''
-    const cleaned = raw.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim()
-    return { raw, cleaned, response }
-  }
+    const durationMs = Date.now() - startMs
+    const inputTokens = usage.inputTokens ?? 0
+    const outputTokens = usage.outputTokens ?? 0
+    const costUsd = getCostUsd(modelId, inputTokens, outputTokens)
 
-  let result: Awaited<ReturnType<typeof attempt>>
-
-  try {
-    result = await attempt([{ role: 'user', content: userMessage }])
-  } catch (err: unknown) {
-    console.error('[ai] call error', err)
-    const status = (err as { status?: number })?.status
-    if (status === 429) throw new AiError('rate_limited')
-    const msg = (err as Error).message || `HTTP ${status ?? 'unknown'}`
-    throw new AiError('server_error', msg)
-  }
-
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(result.cleaned)
-  } catch {
-    // Retry once with correction prompt
-    try {
-      const retry = await attempt([
-        { role: 'user', content: userMessage },
-        { role: 'assistant', content: result.raw },
-        {
-          role: 'user',
-          content:
-            'Your previous reply was not valid JSON. Reply with JSON only, no preamble or markdown.',
-        },
-      ])
-      try {
-        parsed = JSON.parse(retry.cleaned)
-        result = retry
-      } catch {
-        throw new AiError('invalid_response', 'Model returned invalid JSON after retry')
-      }
-    } catch (err) {
-      console.error('[ai] retry error', err)
-      if (err instanceof AiError) throw err
-      throw new AiError('invalid_response', (err as Error).message || 'Retry failed')
+    if (decisionId) {
+      await logAiCall({ userId, decisionId, kind, model: modelId, inputTokens, outputTokens, costUsd, durationMs })
     }
-  }
 
-  const durationMs = Date.now() - startMs
-  const inputTokens = result.response.usage.input_tokens
-  const outputTokens = result.response.usage.output_tokens
-  const costUsd = getCostUsd(model, inputTokens, outputTokens)
+    return { data: object, usage: { input: inputTokens, output: outputTokens, costUsd } }
+  } catch (err: unknown) {
+    const errObj = err as { statusCode?: number; message?: string; name?: string }
+    const status = errObj?.statusCode
+    const msg = errObj?.message ?? ''
+    const name = errObj?.name ?? ''
 
-  await logAiCall({ userId, decisionId, kind, model, inputTokens, outputTokens, costUsd, durationMs })
+    console.log('[ai] error', resolved.provider, kind, status, msg.slice(0, 120))
 
-  return {
-    data: parsed,
-    usage: { input: inputTokens, output: outputTokens, costUsd },
+    if (NoObjectGeneratedError.isInstance(err) || name === 'ZodError') {
+      throw new AiError('invalid_response', msg)
+    }
+    if (status === 429) throw new AiError('rate_limited')
+    if (status === 401 || status === 403) {
+      throw new AiError('no_api_key', 'Key was rejected by provider — re-enter it in Settings')
+    }
+    throw new AiError('server_error', msg)
   }
 }

@@ -15,6 +15,7 @@ export type Database = {
           industry: string | null
           primary_use_case: string | null
           onboarded_at: string | null
+          preferred_provider: 'anthropic' | 'google'
           created_at: string
           updated_at: string
         }
@@ -29,6 +30,7 @@ export type Database = {
           industry?: string | null
           primary_use_case?: string | null
           onboarded_at?: string | null
+          preferred_provider?: 'anthropic' | 'google'
           created_at?: string
           updated_at?: string
         }
@@ -43,6 +45,7 @@ export type Database = {
           industry?: string | null
           primary_use_case?: string | null
           onboarded_at?: string | null
+          preferred_provider?: 'anthropic' | 'google'
           updated_at?: string
         }
         Relationships: []

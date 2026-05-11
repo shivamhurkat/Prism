@@ -9,11 +9,8 @@ For each agent:
 - biases: 1–2 sentences. Their predictable blind spots, pressures, or motivated reasoning. Be honest about pressures.
 
 Do NOT include a Devil's Advocate — Prism adds one automatically.
-Quality > quantity. 5–7 agents. If 4 truly sharp stakeholders cover the landscape, return 4.
-
-Reply with valid JSON only, no preamble or markdown fences:
-{ "agents": [ { "name": "...", "role": "...", "perspective": "...", "biases": "..." }, ... ] }`
+Quality > quantity. 5–7 agents. If 4 truly sharp stakeholders cover the landscape, return 4.`
 
 export function buildAgentsUserPrompt(context: string): string {
-  return `Here is the decision context:\n\n${context}\n\nReturn the JSON now.`
+  return `Here is the decision context:\n\n${context}\n\nReturn the agent council now.`
 }

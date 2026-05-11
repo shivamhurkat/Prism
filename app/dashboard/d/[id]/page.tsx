@@ -212,14 +212,14 @@ export default async function DecisionDetailPage({ params }: Props) {
 
           <ClarificationsSection
             decisionId={id}
-            hasApiKey={apiKeyStatus.hasKey}
+            hasApiKey={apiKeyStatus.keys.some(k => k.hasKey)}
             latestClarifications={latestClarifications}
           />
 
           <AgentCouncilSection
             decisionId={id}
             agents={agentList}
-            hasApiKey={apiKeyStatus.hasKey}
+            hasApiKey={apiKeyStatus.keys.some(k => k.hasKey)}
           />
 
           <div className="border-t border-border pt-6">

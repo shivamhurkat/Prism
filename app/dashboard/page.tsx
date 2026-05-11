@@ -7,6 +7,7 @@ import { DashboardNav } from '@/components/dashboard-nav'
 import { AmbientBackground } from '@/components/ui/ambient-background'
 import { OnboardingModal } from '@/components/onboarding-modal'
 import { DecisionList } from '@/components/decision-list'
+import { getApiKeyStatus } from '@/app/actions/api-keys'
 
 export const metadata = {
   title: 'Dashboard — Prism',
@@ -22,7 +23,7 @@ export default async function DashboardPage() {
     redirect('/signin')
   }
 
-  const [{ data: profile }, { data: decisions }] = await Promise.all([
+  const [{ data: profile }, { data: decisions }, apiKeyStatus] = await Promise.all([
     supabase
       .from('profiles')
       .select('email, full_name, avatar_url, onboarded_at')
@@ -33,6 +34,7 @@ export default async function DashboardPage() {
       .select('id, title, question, status, created_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false }),
+    getApiKeyStatus(),
   ])
 
   await logEvent('dashboard_viewed')
@@ -44,7 +46,12 @@ export default async function DashboardPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <DashboardNav email={email} avatarUrl={avatarUrl} displayName={displayName} />
+      <DashboardNav
+        email={email}
+        avatarUrl={avatarUrl}
+        displayName={displayName}
+        hasNoKeys={apiKeyStatus.keys.every(k => !k.hasKey)}
+      />
 
       <main className="flex-1">
         {!decisions || decisions.length === 0 ? (

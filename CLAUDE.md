@@ -200,3 +200,40 @@ For any AI call with a multi-second wait: cycle through static messages every 2s
 - `[agents] added to {decisionId}` / `[agents] added error {msg}` (in `addAgent`)
 - `[agents] deleted {agentId}` / `[agents] deleted error {msg}` (in `deleteAgent`)
 - `[agents] reordered {decisionId}` (in `reorderAgents`)
+
+---
+
+## Step 7
+
+### AI layer migration — Vercel AI SDK (supersedes Step 5 BYOK + AI infrastructure notes)
+- **Removed** `@anthropic-ai/sdk` (and `lib/ai/anthropic.ts`). Installed `ai`, `@ai-sdk/anthropic`, `@ai-sdk/google`, `zod`.
+- **`generateObject`** (from `ai`) with a **Zod schema** replaces the manual `messages.create` + JSON parse + retry loop. The SDK handles structured output natively (tool-call mode for Anthropic, native structured output for Google). No more "Reply with valid JSON only" in prompts.
+- **`callJsonModel<T>`** now takes `{ userId, decisionId?, kind, modelTier, system, user, schema: z.ZodSchema<T>, schemaName }` and returns `{ data: T, usage }`. `data` is already typed and validated — callers consume it directly with no casting.
+- Error codes: `no_api_key | invalid_response | rate_limited | server_error | no_key_for_provider`.
+
+### Two-provider support — Anthropic + Google
+- **`lib/ai/models.ts`** — `MODELS: Record<Provider, Record<ModelTier, string>>`. `Provider = 'anthropic' | 'google'`. `ModelTier = 'light' | 'heavy' | 'validation'`.
+- **`lib/ai/providers.ts`** — replaces `lib/ai/anthropic.ts`. `getProviderForUser(userId)` reads `profiles.preferred_provider`, fetches the corresponding `api_keys` row, decrypts, builds a provider factory via `createAnthropic` or `createGoogleGenerativeAI`, and returns `{ provider, modelFor(tier), modelIdFor(tier) }`. Returns null if no key. `validateProviderKey(provider, key)` pings the validation model with `generateText`.
+- **`lib/ai/pricing.ts`** — extended with Gemini rates (`gemini-2.5-flash`, `gemini-2.5-pro`).
+
+### Profile schema change
+- `profiles.preferred_provider` column added (migration: `supabase/migrations/0005_preferred_provider.sql`). Default `'anthropic'`. Routes all AI calls via `getProviderForUser`.
+- `api_keys` table already keyed by `(user_id, provider)` — now multi-row, one per provider. First key saved also sets `preferred_provider`.
+
+### Multi-provider API key UI
+- **`api-keys.ts`** — `getApiKeyStatus()` now returns `{ keys: ProviderKeyStatus[], preferredProvider }`. `saveApiKey` reads `provider` from formData. `deleteApiKey(provider)` is now provider-scoped. `setPreferredProvider(provider)` updates `profiles.preferred_provider` after verifying a key exists.
+- **`ApiKeyForm`** — now provider-specific. Takes `provider` prop. Hidden `<input name="provider" />` included. Placeholder and help link differ per provider.
+- **`ProviderCard`** (`components/provider-card.tsx`) — LiquidGlass card rendering one `ApiKeyForm` per provider with connected/not-connected status.
+- **`PreferredProviderSwitcher`** (`components/preferred-provider-switcher.tsx`) — segmented radio with optimistic update; only shown when BOTH providers connected.
+- **`ApiKeyModal`** — tabbed (shadcn Tabs); "Anthropic" and "Google Gemini" tabs each render an `ApiKeyForm`. Tab selection does not affect which provider is preferred; user connects independently.
+- **Settings page** — "API keys" section has two ProviderCards. If both connected, `PreferredProviderSwitcher` appears above the cards.
+- **DashboardNav** — accepts `hasNoKeys?: boolean`; shows a copper dot on avatar when no keys connected.
+
+### Prompt template changes
+- `CLARIFICATIONS_SYSTEM` and `AGENTS_SYSTEM`: removed "Reply with valid JSON only..." trailing paragraph. Structured output is enforced by the SDK's `generateObject` call, not by prompt instructions.
+
+### Console.log groups added in step 7
+- `[provider] resolving {provider}` / `[provider] no key for {provider}` (in `getProviderForUser`)
+- `[provider] validating {provider}` / `[provider] valid {provider}` / `[provider] invalid {provider} {reason}` (in `validateProviderKey`)
+- `[provider] saved {provider}` (in `saveApiKey`)
+- `[provider] switched {from}→{to}` (in `setPreferredProvider`)

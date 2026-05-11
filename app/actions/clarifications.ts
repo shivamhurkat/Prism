@@ -2,13 +2,24 @@
 
 import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
+import { z } from 'zod'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { getApiKeyStatus } from '@/app/actions/api-keys'
 import { buildDecisionContext } from '@/lib/ai/context'
 import { callJsonModel, AiError } from '@/lib/ai/call'
-import { MODELS } from '@/lib/ai/models'
 import { CLARIFICATIONS_SYSTEM, buildClarificationsUserPrompt } from '@/lib/ai/prompts/clarifications'
 import { logEvent } from '@/lib/events'
+
+const ClarificationsSchema = z.object({
+  questions: z
+    .array(
+      z.object({
+        question: z.string().min(5).max(500),
+        suggested_answers: z.array(z.string().max(80)).max(4),
+      })
+    )
+    .min(3)
+    .max(5),
+})
 
 type GenerateResult =
   | { status: 'success'; generationId: string }
@@ -28,9 +39,6 @@ export async function generateClarifications(decisionId: string): Promise<Genera
 
   if (!decision) return { error: 'Decision not found.' }
 
-  const apiKeyStatus = await getApiKeyStatus()
-  if (!apiKeyStatus.hasKey) return { error: 'No API key configured.', code: 'no_api_key' }
-
   const { data: files } = await supabase
     .from('decision_files')
     .select('file_name, extracted_text, parse_skipped_reason')
@@ -46,39 +54,17 @@ export async function generateClarifications(decisionId: string): Promise<Genera
       userId: user.id,
       decisionId,
       kind: 'clarifications',
-      model: MODELS.light,
+      modelTier: 'light',
       system: CLARIFICATIONS_SYSTEM,
       user: buildClarificationsUserPrompt(context),
+      schema: ClarificationsSchema,
+      schemaName: 'Clarifications',
     })
-
-    const payload = data as { questions?: unknown[] }
-    if (
-      !Array.isArray(payload?.questions) ||
-      payload.questions.length < 3 ||
-      payload.questions.length > 5
-    ) {
-      return { error: 'Model returned unexpected structure.' }
-    }
-
-    const validated = (payload.questions as Array<{ question?: unknown; suggested_answers?: unknown[] }>)
-      .filter(q => typeof q.question === 'string' && q.question.length >= 5 && q.question.length <= 500)
-      .map(q => ({
-        question: q.question as string,
-        suggested_answers: Array.isArray(q.suggested_answers)
-          ? (q.suggested_answers as unknown[])
-              .filter((a): a is string => typeof a === 'string')
-              .map(a => a.slice(0, 80))
-          : [],
-      }))
-
-    if (validated.length < 3) {
-      return { error: 'Not enough valid questions returned.' }
-    }
 
     const generationId = randomUUID()
     const service = createServiceClient()
 
-    const rows = validated.map((q, i) => ({
+    const rows = data.questions.map((q, i) => ({
       decision_id: decisionId,
       question: q.question,
       suggested_answers: q.suggested_answers,
@@ -96,11 +82,10 @@ export async function generateClarifications(decisionId: string): Promise<Genera
       return { error: insertError.message }
     }
 
-    console.log('[clarifications] generated', validated.length, usage.costUsd.toFixed(6))
+    console.log('[clarifications] generated', data.questions.length, usage.costUsd.toFixed(6))
     await logEvent('clarifications_generated', {
       decision_id: decisionId,
-      question_count: validated.length,
-      model: MODELS.light,
+      question_count: data.questions.length,
       costUsd: usage.costUsd,
     })
 
