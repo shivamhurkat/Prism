@@ -3,10 +3,12 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { LiquidGlass } from '@/components/ui/liquid-glass'
 import { FileSection } from '@/components/file-list'
-import { ContextBlock } from '@/components/context-block'
 import { ContinueToConfigButton } from '@/components/continue-to-config-button'
 import { ClarificationsSection } from '@/components/clarifications-section'
+import { AgentCouncilSection } from '@/components/agent-council-section'
+import { EditableField } from '@/components/ui/editable-field'
 import { getApiKeyStatus } from '@/app/actions/api-keys'
+import { updateDecisionBasics } from '@/app/actions/decisions'
 import type { DecisionStatus } from '@/lib/database.types'
 
 export const metadata = {
@@ -25,6 +27,8 @@ const statusConfig: Record<DecisionStatus, { label: string; className: string }>
   archived: { label: 'Archived', className: 'bg-border/60 text-muted-foreground' },
   failed: { label: 'Failed', className: 'bg-destructive/15 text-destructive' },
 }
+
+const FROZEN_STATUSES = new Set(['running', 'completed'])
 
 interface Props {
   params: Promise<{ id: string }>
@@ -51,7 +55,7 @@ export default async function DecisionDetailPage({ params }: Props) {
 
   const latestGenId = latestGenRow.data?.generation_id ?? null
 
-  const [{ data: decision }, { data: files }, { data: clarifications }, apiKeyStatus] =
+  const [{ data: decision }, { data: files }, { data: clarifications }, { data: agents }, apiKeyStatus] =
     await Promise.all([
       supabase
         .from('decisions')
@@ -72,6 +76,11 @@ export default async function DecisionDetailPage({ params }: Props) {
             .eq('generation_id', latestGenId)
             .order('position', { ascending: true })
         : Promise.resolve({ data: [] }),
+      supabase
+        .from('agent_charters')
+        .select('id, name, role, perspective, biases, locked, position')
+        .eq('decision_id', id)
+        .order('position', { ascending: true }),
       getApiKeyStatus(),
     ])
 
@@ -102,6 +111,32 @@ export default async function DecisionDetailPage({ params }: Props) {
     ...c,
     suggested_answers: Array.isArray(c.suggested_answers) ? c.suggested_answers as string[] : [],
   }))
+  const agentList = (agents ?? []).map(a => ({
+    id: a.id,
+    name: a.name,
+    role: a.role,
+    perspective: a.perspective,
+    biases: a.biases,
+    locked: a.locked,
+    position: a.position,
+  }))
+
+  const isLocked = FROZEN_STATUSES.has(decision.status)
+
+  async function onSaveTitle(newValue: string) {
+    'use server'
+    return updateDecisionBasics(id, { title: newValue })
+  }
+
+  async function onSaveQuestion(newValue: string) {
+    'use server'
+    return updateDecisionBasics(id, { question: newValue })
+  }
+
+  async function onSaveContextText(newValue: string) {
+    'use server'
+    return updateDecisionBasics(id, { context_text: newValue })
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -118,22 +153,34 @@ export default async function DecisionDetailPage({ params }: Props) {
 
         <LiquidGlass className="p-8">
           {/* Header row */}
-          <div className="flex items-start justify-between gap-4 mb-6">
-            <h1 className="font-display text-3xl font-light text-foreground leading-tight">
-              {decision.title}
-            </h1>
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <div className="flex-1 min-w-0">
+              <EditableField
+                variant="title"
+                value={decision.title}
+                onSave={onSaveTitle}
+                maxLength={120}
+                disabled={isLocked}
+              />
+            </div>
             <span
-              className={`shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-sans font-medium uppercase tracking-wide ${className}`}
+              className={`shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-sans font-medium uppercase tracking-wide mt-2 ${className}`}
             >
               {label}
             </span>
           </div>
 
-          {decision.question && (
-            <p className="text-base text-muted-foreground font-sans leading-relaxed mb-6">
-              {decision.question}
-            </p>
-          )}
+          {/* Decision question */}
+          <div className="mt-2 mb-6">
+            <EditableField
+              variant="prose"
+              value={decision.question ?? ''}
+              onSave={onSaveQuestion}
+              label="decision question"
+              placeholder="What is the decision you need to make?"
+              disabled={isLocked}
+            />
+          </div>
 
           {/* Context & files section */}
           <div className="border-t border-border pt-6 space-y-5">
@@ -146,9 +193,19 @@ export default async function DecisionDetailPage({ params }: Props) {
               </p>
             </div>
 
-            {decision.context_text && (
-              <ContextBlock text={decision.context_text} />
-            )}
+            {/* Written context inline edit */}
+            <div>
+              <p className="text-[11px] font-sans uppercase tracking-widest text-muted-foreground mb-2">
+                Written context
+              </p>
+              <EditableField
+                variant="prose"
+                value={decision.context_text ?? ''}
+                onSave={onSaveContextText}
+                label="written context"
+                disabled={isLocked}
+              />
+            </div>
 
             <FileSection decisionId={id} initialFiles={initialFiles} />
           </div>
@@ -157,6 +214,12 @@ export default async function DecisionDetailPage({ params }: Props) {
             decisionId={id}
             hasApiKey={apiKeyStatus.hasKey}
             latestClarifications={latestClarifications}
+          />
+
+          <AgentCouncilSection
+            decisionId={id}
+            agents={agentList}
+            hasApiKey={apiKeyStatus.hasKey}
           />
 
           <div className="border-t border-border pt-6">

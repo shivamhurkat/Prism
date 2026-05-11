@@ -1,6 +1,7 @@
 'use server'
 
 import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { logEvent } from '@/lib/events'
 
@@ -172,4 +173,67 @@ export async function saveDecisionAndContinue(
     console.log('[decision] error', msg)
     return { status: 'error', errors: { _root: msg } }
   }
+}
+
+const EDITABLE_STATUSES = new Set(['draft', 'configuring', 'ready', 'failed'])
+
+export async function updateDecisionBasics(
+  decisionId: string,
+  fields: { title?: string; question?: string; context_text?: string }
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Not authenticated.' }
+
+  const { data: decision } = await supabase
+    .from('decisions')
+    .select('id, status')
+    .eq('id', decisionId)
+    .eq('user_id', user.id)
+    .single()
+
+  if (!decision) return { ok: false, error: 'Decision not found.' }
+
+  if (!EDITABLE_STATUSES.has(decision.status)) {
+    const reason = decision.status === 'running' ? 'running' : 'completed'
+    console.log('[decision] basics error', `locked while ${reason}`)
+    return { ok: false, error: `Cannot edit while decision is ${reason}.` }
+  }
+
+  if (fields.title !== undefined) {
+    if (!fields.title || fields.title.length > 120) {
+      return { ok: false, error: fields.title ? 'Title must be 120 characters or fewer.' : 'Title is required.' }
+    }
+  }
+  if (fields.question !== undefined) {
+    if (!fields.question || fields.question.length < 50) {
+      return { ok: false, error: 'Decision question must be at least 50 characters.' }
+    }
+  }
+
+  const update: { title?: string; question?: string; context_text?: string | null } = {}
+  const fieldsChanged: string[] = []
+  if (fields.title !== undefined) { update.title = fields.title; fieldsChanged.push('title') }
+  if (fields.question !== undefined) { update.question = fields.question; fieldsChanged.push('question') }
+  if (fields.context_text !== undefined) { update.context_text = fields.context_text || null; fieldsChanged.push('context_text') }
+
+  if (fieldsChanged.length === 0) return { ok: true }
+
+  const { error } = await supabase
+    .from('decisions')
+    .update(update)
+    .eq('id', decisionId)
+    .eq('user_id', user.id)
+
+  if (error) {
+    console.log('[decision] basics error', error.message)
+    return { ok: false, error: error.message }
+  }
+
+  console.log('[decision] basics updated', fieldsChanged)
+  await logEvent('decision_basics_updated', { decision_id: decisionId, fields_changed: fieldsChanged })
+  revalidatePath(`/dashboard/d/${decisionId}`)
+  return { ok: true }
 }

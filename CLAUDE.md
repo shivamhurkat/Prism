@@ -148,3 +148,55 @@ Client shows `uploading` during upload before DB insert completes (optimistic on
 
 ### Rotating loading messages pattern
 For any AI call with a multi-second wait: cycle through static messages every 2s using `setInterval` in a `useEffect` keyed on the `isPending` boolean. Array: `['Reading your decision...', 'Identifying gaps in context...', 'Drafting questions a sharp advisor would ask...', 'Almost there...']`. Clear interval on unmount or pending=false.
+
+---
+
+## Step 6
+
+### Inline edit pattern — EditableField
+- **Component** `components/ui/editable-field.tsx` — reusable client component. Props: `value, onSave, variant, placeholder, label, maxLength, disabled`.
+- **variant="title"**: renders value as Fraunces 32px; click swaps to borderless input with copper underline. Enter or blur saves; Escape cancels.
+- **variant="prose"**: renders value as Inter 16px muted. Pencil icon top-right on hover; click opens auto-grow textarea. Save/Cancel buttons bottom-right. Empty state shows "+ Add {label}" pill.
+- **Optimistic UI**: on save, shows copper left-border flash for 600ms. If `onSave` returns `{ ok: false }`, reverts and toasts error.
+- **Disabled mode**: `disabled={true}` renders read-only; title variant shows a lock icon; prose variant shows "Locked while running / after completion.". No pencil, no click.
+- **onSave** is a server action (inline `'use server'` function) passed from the page server component, capturing the decision ID in its closure.
+
+### updateDecisionBasics — status-based freeze
+- `app/actions/decisions.ts` — `updateDecisionBasics(decisionId, fields)`:
+  - Editable statuses: `draft | configuring | ready | failed`. Rejects with error if status is `running` or `completed`.
+  - Validates title (1–120 chars) and question (min 50 chars) only if those fields are supplied.
+  - Updates only supplied fields; calls `revalidatePath` and logs `decision_basics_updated`.
+- **Page freeze**: `FROZEN_STATUSES = new Set(['running', 'completed'])`. All three `EditableField` instances get `disabled={isLocked}`.
+
+### Agent council architecture
+- **Table** `agent_charters` (defined in `0001_initial.sql`): `id, decision_id, name, role, perspective, biases, locked, position`. Already in `database.types.ts`.
+- **AI prompt** `lib/ai/prompts/agents.ts` — `AGENTS_SYSTEM` + `buildAgentsUserPrompt(context)`. Asks for 5–7 distinct stakeholders with name/role/perspective/biases. Explicitly excludes Devil's Advocate.
+- **Devil's Advocate constant** `lib/ai/devils-advocate.ts` — `DEVILS_ADVOCATE` object. Always inserted last with `locked=true`. Its name is immutable; perspective/biases are editable.
+- **`buildDecisionContext`** updated to accept optional `clarifications?: Array<{question, user_answer}>`. When supplied, appends `# Clarifying Q&A` section before files.
+- **Server actions** `app/actions/agents.ts`: `generateAgentCouncil`, `updateAgent`, `addAgent`, `deleteAgent`, `reorderAgents`.
+
+### Locked-row rules (agent_charters)
+- `locked=true` rows (Devil's Advocate): name is immutable, `role/perspective/biases` are editable.
+- Cannot be deleted — `deleteAgent` rejects locked rows with a user-facing message.
+- Cannot be dragged from last position — `reorderAgents` snaps DA back to last silently.
+- Drag handle in `AgentCard` is `disabled` for locked agents (cursor-not-allowed, tooltip).
+
+### Edit/Add/Delete/Reorder semantics
+- **Edit**: `updateAgent(agentId, fields)` — partial update, validates lengths, respects locked-name rule.
+- **Add**: `addAgent(decisionId, fields)` — inserts at DA's current position, bumps DA's position by 1 so it stays last.
+- **Delete**: `deleteAgent(agentId)` — renumbers remaining positions after delete.
+- **Reorder**: `reorderAgents(decisionId, orderedIds[])` — bulk position update; enforces DA remains at the end.
+- **Regenerate**: deletes ALL existing rows, re-inserts AI agents + DA. Status advances to `configuring` if previously `draft`.
+
+### Component structure
+- `components/agent-card.tsx` — `AgentCard` (client). Read mode: drag handle, name, role, locked badge, edit/delete icons, perspective, biases. Edit mode: all four fields as inputs/textareas with live char counters.
+- `components/agent-council-section.tsx` — `AgentCouncilSection` (client). Three states: empty (generate CTA), loading (spinner + rotating messages), loaded (DndContext + SortableContext + agent cards + add/regenerate buttons).
+- Drag-drop uses `@dnd-kit/core` + `@dnd-kit/sortable` + `@dnd-kit/utilities` (installed step 6).
+
+### Console.log groups added in step 6
+- `[decision] basics updated {fields}` / `[decision] basics error {reason}` (in `updateDecisionBasics`)
+- `[agents] generating {decisionId}` / `[agents] generated {n} +1 DA cost {$}` / `[agents] error {msg}` (in `generateAgentCouncil`)
+- `[agents] updated {agentId} {fields}` / `[agents] updated error {msg}` (in `updateAgent`)
+- `[agents] added to {decisionId}` / `[agents] added error {msg}` (in `addAgent`)
+- `[agents] deleted {agentId}` / `[agents] deleted error {msg}` (in `deleteAgent`)
+- `[agents] reordered {decisionId}` (in `reorderAgents`)

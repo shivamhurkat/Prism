@@ -12,12 +12,19 @@ interface FileInput {
   parse_skipped_reason: string | null
 }
 
+interface ClarificationInput {
+  question: string
+  user_answer: string | null
+}
+
 export function buildDecisionContext({
   decision,
   files,
+  clarifications,
 }: {
   decision: DecisionInput
   files: FileInput[]
+  clarifications?: ClarificationInput[]
 }): string {
   const sections: string[] = [
     `Decision title\n${decision.title}`,
@@ -27,6 +34,13 @@ export function buildDecisionContext({
 
   const textFiles = files.filter(f => f.extracted_text !== null)
   const skippedFiles = files.filter(f => f.extracted_text === null && f.parse_skipped_reason)
+
+  if (clarifications && clarifications.length > 0) {
+    const qaLines = clarifications.map((c, i) =>
+      `Q${i + 1}: ${c.question}\nA${i + 1}: ${c.user_answer ?? '(no answer given)'}`
+    )
+    sections.push(`# Clarifying Q&A\n${qaLines.join('\n')}`)
+  }
 
   if (textFiles.length > 0 || skippedFiles.length > 0) {
     sections.push('Uploaded files')

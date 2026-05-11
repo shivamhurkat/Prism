@@ -13,9 +13,15 @@ import { ApiKeyForm } from '@/components/api-key-form'
 interface ApiKeyModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  onSuccess?: () => void
 }
 
-export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
+export function ApiKeyModal({ open, onOpenChange, onSuccess }: ApiKeyModalProps) {
+  function handleSuccess() {
+    onSuccess?.()
+    onOpenChange(false)
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[520px] p-0 border-0 bg-transparent shadow-none">
@@ -32,7 +38,7 @@ export function ApiKeyModal({ open, onOpenChange }: ApiKeyModalProps) {
           </DialogHeader>
           <ApiKeyForm
             initialStatus={{ hasKey: false }}
-            onSuccess={() => onOpenChange(false)}
+            onSuccess={handleSuccess}
           />
         </LiquidGlass>
       </DialogContent>
