@@ -15,6 +15,7 @@ interface Props {
   run: RunRow
   synthesis: SynthesisRow | null
   tasks: RunTaskRow[]
+  modelsUsed?: { analysis: string; synthesis: string }
 }
 
 function formatRelative(dateStr: string): string {
@@ -68,7 +69,7 @@ function TaskDetail({ task }: { task: RunTaskRow }) {
   )
 }
 
-export function CompletedRunPlaceholder({ decision, run, synthesis, tasks }: Props) {
+export function CompletedRunPlaceholder({ decision, run, synthesis, tasks, modelsUsed }: Props) {
   const [rawOpen, setRawOpen] = useState(false)
 
   return (
@@ -126,6 +127,11 @@ export function CompletedRunPlaceholder({ decision, run, synthesis, tasks }: Pro
               <span className="text-[11px] font-sans uppercase tracking-widest text-muted-foreground">
                 Actual cost &middot; {durationMin(run)}
               </span>
+              {modelsUsed && (
+                <span className="text-[11px] font-sans uppercase tracking-widest text-muted-foreground">
+                  Analysis &middot; {modelsUsed.analysis} &middot; Synthesis &middot; {modelsUsed.synthesis}
+                </span>
+              )}
             </div>
           </div>
 

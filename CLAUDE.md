@@ -335,3 +335,53 @@ When the deliberation engine ships in step 9, a 6th "Run" stepper state will be 
 - `[run-task] critique {agentName} start` / `done {durationMs}ms` / `failed {reason}` (in `processCritiqueTask`)
 - `[run-task] synthesis {taskId} start` / `done {durationMs}ms` / `failed {reason}` (in `processSynthesisTask`)
 - `[realtime] subscribed run={runId}` / `update task={taskId} status={status}` (in `LiveRunView`)
+
+---
+
+## Step 10
+
+### Three-tier model system
+`ModelTier = 'light' | 'analysis' | 'heavy' | 'validation'`
+
+| Tier | Anthropic | Google | Used for |
+|---|---|---|---|
+| `light` | claude-sonnet-4-6 | gemini-2.5-flash | Clarifications, agent/scenario suggestions |
+| `analysis` | claude-sonnet-4-6 | gemini-2.5-flash | Agent analysis, critique (persona-driven structured generation) |
+| `heavy` | claude-opus-4-7 | gemini-2.5-pro | Synthesis ONLY (multi-source reasoning + judgment) |
+| `validation` | claude-haiku-4-5-20251001 | gemini-2.5-flash | API key validation only |
+
+**Architectural rationale**: Analysis tasks are persona-driven structured generation — each agent produces a structured position on one scenario. Analysis-tier models (Sonnet/Flash) are sufficient and dramatically cheaper/more reliable than heavy-tier. Synthesis is the only true heavy reasoning load: it aggregates all agent voices across all scenarios into a verdict with confidence, risks, and criteria. To upgrade analysis to a smarter model on either provider, change the `analysis` entry in `lib/ai/models.ts` — no other code changes needed.
+
+**Supersedes step 9 note**: analysis/critique tasks now use `modelTier: 'analysis'`, not `'heavy'`. Synthesis stays `'heavy'`.
+
+### callWithBackoff — `lib/ai/retry.ts`
+- 5 total attempts (maxRetries=4, attempt 0..4)
+- Exponential backoff: 1.5s → 3s → 6s → 12s → 24s, capped at 30s, with ±500ms jitter per step
+- `isTransientError` covers HTTP 429/500/502/503/504/529 and overload message patterns (overload, high demand, temporarily unavailable, rate limit, resource exhausted, server is busy, please try again)
+- Vercel AI SDK's built-in retries disabled (`maxRetries: 0` in `generateObject`)
+- The `rate_limited` AiError code now only fires if backoff exhausted all 5 attempts on a 429 — meaning the limit is sustained, not transient
+- Per-attempt logging: `[ai] retry attempt {n}/{maxRetries} after {ms}ms for {label}: {err.message}`
+
+### Synthesis hardening
+- Backoff wrapper in `callJsonModel` handles transient 5xx errors with 5 attempts spanning ~90s
+- `AiError('invalid_response')` (schema/JSON failure, not transient) gets a separate 30s-cooldown re-attempt: Gemini Pro occasionally returns malformed JSON under load; a cooldown often clears it
+- Log: `[run-task] synthesis schema-retry after 30s {taskId}`
+- On final failure: `[run-task] synthesis hard-fail {taskId} {error}`
+
+### Provider-specific batch sizing
+- `BATCH_SIZE = bundle.provider === 'google' ? 3 : 4`
+- Applied to both analysis-pass and critique-pass loops in `deliberation-run.ts`
+- Reason: Google's quota is burstier and throttles more aggressively under parallel load
+- Log: `[run] using batch size {n} for provider {provider}`
+
+### Estimator and UI transparency
+- `lib/ai/estimator.ts` now computes cost per-phase using the correct tier: analysis+critique cost priced at `MODELS[provider].analysis`; synthesis priced at `MODELS[provider].heavy`
+- `RunEstimate` shape extended with `modelsUsed: { analysis: string, synthesis: string }` (replaces `modelUsed: string`)
+- Pre-run review (Section C) shows two stacked label lines below the dollar amount: "Estimated cost" and "Analysis · {model} · Synthesis · {model}". Hovering the dollar amount shows a Tooltip explaining the two-tier architecture.
+- Completed run placeholder shows `modelsUsed` below actual cost when available.
+
+### Console.log groups added in step 10
+- `[ai] retry attempt {n}/{maxRetries} after {ms}ms for {label}: {err.message}` (in `callWithBackoff`)
+- `[run-task] synthesis schema-retry after 30s {taskId}` (in `processSynthesisTask`)
+- `[run-task] synthesis hard-fail {taskId} {error}` (in `processSynthesisTask`)
+- `[run] using batch size {n} for provider {provider}` (in `deliberation-run.ts`)

@@ -29,27 +29,34 @@ export const deliberationRun = inngest.createFunction(
     }
 
     const bundle = await step.run('load-context', async () => {
-      const full = await run.getDecisionWithChildren(decisionId)
+      const supabase = getServiceClient()
+      const [full, { data: profile }] = await Promise.all([
+        run.getDecisionWithChildren(decisionId),
+        supabase.from('profiles').select('preferred_provider').eq('id', userId).single(),
+      ])
+      const provider: 'anthropic' | 'google' = (profile?.preferred_provider as 'anthropic' | 'google' | null) ?? 'anthropic'
       const contextText = buildDecisionContext({
         decision: full.decision,
         files: full.files,
         clarifications: full.clarifications,
       })
-      return { ...full, contextText }
+      return { ...full, contextText, provider }
     })
 
     await step.run('mark-running', async () => {
       await run.markRunRunning(runId)
     })
 
-    // Analysis pass — batches of 4 in parallel
+    // Analysis pass — provider-specific batch size (Google throttles more aggressively)
+    const BATCH_SIZE = bundle.provider === 'google' ? 3 : 4
+    console.log('[run] using batch size', BATCH_SIZE, 'for provider', bundle.provider)
+
     await step.run('analysis-pass', async () => {
       const tasks = await run.getRunTasks(runId, 'analysis', 'pending')
-      const BATCH = 4
-      for (let i = 0; i < tasks.length; i += BATCH) {
+      for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
         const r = await run.getRun(runId)
         if (r.status === 'cancelled') return
-        const batch = tasks.slice(i, i + BATCH)
+        const batch = tasks.slice(i, i + BATCH_SIZE)
         await Promise.all(batch.map(t => processAnalysisTask(t, userId, decisionId, bundle)))
         await run.recomputeRunProgress(runId)
       }
@@ -59,14 +66,13 @@ export const deliberationRun = inngest.createFunction(
     const afterAnalysis = await run.getRun(runId)
     if (afterAnalysis.status === 'cancelled') return
 
-    // Critique pass — batches of 4 in parallel
+    // Critique pass — same batch size as analysis pass
     await step.run('critique-pass', async () => {
       const tasks = await run.getRunTasks(runId, 'critique', 'pending')
-      const BATCH = 4
-      for (let i = 0; i < tasks.length; i += BATCH) {
+      for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
         const r = await run.getRun(runId)
         if (r.status === 'cancelled') return
-        const batch = tasks.slice(i, i + BATCH)
+        const batch = tasks.slice(i, i + BATCH_SIZE)
         await Promise.all(batch.map(t => processCritiqueTask(t, userId, decisionId, bundle)))
         await run.recomputeRunProgress(runId)
       }

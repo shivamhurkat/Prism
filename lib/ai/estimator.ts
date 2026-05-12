@@ -7,7 +7,7 @@ export interface RunEstimate {
   estimatedOutputTokens: number
   estimatedCostUsd: number
   estimatedMinutes: number
-  modelUsed: string
+  modelsUsed: { analysis: string; synthesis: string }
 }
 
 export function estimateRunCost({
@@ -26,19 +26,21 @@ export function estimateRunCost({
   const critiqueCalls = agentsCount
   const totalCalls = analysisCalls + critiqueCalls + 1
 
-  const estimatedInputTokens =
-    analysisCalls * (contextTokens + 1200) +
-    critiqueCalls * 3500 +
-    9000
+  const analysisInputTokens = analysisCalls * (contextTokens + 1200) + critiqueCalls * 3500
+  const analysisOutputTokens = analysisCalls * 1000 + critiqueCalls * 700
 
-  const estimatedOutputTokens =
-    analysisCalls * 1000 +
-    critiqueCalls * 700 +
-    3000
+  const synthesisInputTokens = 9000
+  const synthesisOutputTokens = 3000
 
-  const modelUsed = MODELS[provider].heavy
-  const estimatedCostUsd =
-    Math.ceil(getCostUsd(modelUsed, estimatedInputTokens, estimatedOutputTokens) * 100) / 100
+  const estimatedInputTokens = analysisInputTokens + synthesisInputTokens
+  const estimatedOutputTokens = analysisOutputTokens + synthesisOutputTokens
+
+  const analysisModel = MODELS[provider].analysis
+  const heavyModel = MODELS[provider].heavy
+
+  const analysisCost = getCostUsd(analysisModel, analysisInputTokens, analysisOutputTokens)
+  const synthesisCost = getCostUsd(heavyModel, synthesisInputTokens, synthesisOutputTokens)
+  const estimatedCostUsd = Math.ceil((analysisCost + synthesisCost) * 100) / 100
 
   const estimatedMinutes = Math.max(2, Math.ceil((totalCalls * 25) / 60 / 3))
 
@@ -48,6 +50,6 @@ export function estimateRunCost({
     estimatedOutputTokens,
     estimatedCostUsd,
     estimatedMinutes,
-    modelUsed,
+    modelsUsed: { analysis: analysisModel, synthesis: heavyModel },
   }
 }

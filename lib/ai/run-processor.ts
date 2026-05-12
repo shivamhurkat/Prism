@@ -1,5 +1,5 @@
 import 'server-only'
-import { callJsonModel } from '@/lib/ai/call'
+import { callJsonModel, AiError } from '@/lib/ai/call'
 import {
   ANALYSIS_SYSTEM,
   buildAnalysisUserPrompt,
@@ -72,7 +72,7 @@ export async function processAnalysisTask(
       userId,
       decisionId,
       kind: 'analysis',
-      modelTier: 'heavy',
+      modelTier: 'analysis',
       system,
       user,
       schema: AnalysisSchema,
@@ -153,7 +153,7 @@ export async function processCritiqueTask(
       userId,
       decisionId,
       kind: 'critique',
-      modelTier: 'heavy',
+      modelTier: 'analysis',
       system,
       user,
       schema: CritiqueSchema,
@@ -232,13 +232,13 @@ export async function processSynthesisTask(
     return { agentName: agent?.name ?? 'Unknown', critiqueText }
   })
 
-  const attemptSynthesis = async (): Promise<{ ok: true } | { ok: false; error: string }> => {
-    const user = buildSynthesisUserPrompt({
-      context: bundle.contextText,
-      agentsWithAnalyses,
-      critiques,
-    })
+  const user = buildSynthesisUserPrompt({
+    context: bundle.contextText,
+    agentsWithAnalyses,
+    critiques,
+  })
 
+  const runSynthesisCall = async (): Promise<{ ok: true } | { ok: false; error: string; isSchemaError: boolean }> => {
     try {
       const { data, usage } = await callJsonModel({
         userId,
@@ -273,19 +273,26 @@ export async function processSynthesisTask(
       return { ok: true }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      return { ok: false, error: msg }
+      const isSchemaError = err instanceof AiError && err.code === 'invalid_response'
+      return { ok: false, error: msg, isSchemaError }
     }
   }
 
-  const first = await attemptSynthesis()
+  const first = await runSynthesisCall()
   if (first.ok) return first
 
-  // One retry on synthesis failure
-  console.log('[run-task] synthesis', task.id, 'retrying after failure:', first.error)
-  const second = await attemptSynthesis()
-  if (second.ok) return second
+  if (first.isSchemaError) {
+    // Gemini Pro occasionally returns malformed JSON under load; a 30s cooldown often clears it
+    console.log('[run-task] synthesis schema-retry after 30s', task.id)
+    await new Promise((r) => setTimeout(r, 30_000))
+    const second = await runSynthesisCall()
+    if (second.ok) return second
+    console.log('[run-task] synthesis hard-fail', task.id, second.error)
+    await updateTaskFailed(task.id, second.error)
+    return { ok: false, error: second.error }
+  }
 
-  console.log('[run-task] synthesis', task.id, 'failed', second.error)
-  await updateTaskFailed(task.id, second.error)
-  return { ok: false, error: second.error }
+  console.log('[run-task] synthesis hard-fail', task.id, first.error)
+  await updateTaskFailed(task.id, first.error)
+  return { ok: false, error: first.error }
 }

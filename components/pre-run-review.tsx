@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Lock, Loader2 } from 'lucide-react'
 import { LiquidGlass } from '@/components/ui/liquid-glass'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { estimateRunCost } from '@/lib/ai/estimator'
 import { startDeliberation } from '@/app/actions/runs'
 import type { Provider } from '@/lib/ai/models'
@@ -69,7 +70,7 @@ export function PreRunReview({
         totalCalls: estimate.totalCalls,
         estimatedCostUsd: estimate.estimatedCostUsd,
         estimatedMinutes: estimate.estimatedMinutes,
-        modelUsed: estimate.modelUsed,
+        modelsUsed: estimate.modelsUsed,
       },
     })
     startTransition(async () => {
@@ -178,11 +179,23 @@ export function PreRunReview({
         {/* C. Cost + time */}
         <div className="mt-8 flex justify-between items-center gap-6">
           <div className="flex flex-col gap-0.5">
-            <span className="font-display text-[28px] font-light text-foreground leading-none">
-              ${estimate.estimatedCostUsd.toFixed(2)}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="font-display text-[28px] font-light text-foreground leading-none cursor-default">
+                    ${estimate.estimatedCostUsd.toFixed(2)}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Analysis and critique run on {estimate.modelsUsed.analysis} for speed and cost. Synthesis runs on {estimate.modelsUsed.synthesis} for reasoning depth. This matches how production AI pipelines work — no quality compromise.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <span className="text-[11px] font-sans uppercase tracking-widest text-muted-foreground">
+              Estimated cost
             </span>
             <span className="text-[11px] font-sans uppercase tracking-widest text-muted-foreground">
-              Estimated cost · {estimate.modelUsed}
+              Analysis · {estimate.modelsUsed.analysis} · Synthesis · {estimate.modelsUsed.synthesis}
             </span>
           </div>
           <div className="flex flex-col gap-0.5 text-right">

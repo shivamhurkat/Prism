@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { getCostUsd } from '@/lib/ai/pricing'
 import { logAiCall } from '@/lib/events'
 import { getProviderForUser } from '@/lib/ai/providers'
+import { callWithBackoff } from '@/lib/ai/retry'
 
 export class AiError extends Error {
   constructor(
@@ -53,14 +54,18 @@ export async function callJsonModel<T>({
   const model = resolved.modelFor(modelTier)
 
   try {
-    const { object, usage } = await generateObject({
-      model,
-      schema,
-      schemaName,
-      system,
-      prompt: userPrompt,
-      maxRetries: 2,
-    })
+    const { object, usage } = await callWithBackoff(
+      () =>
+        generateObject({
+          model,
+          schema,
+          schemaName,
+          system,
+          prompt: userPrompt,
+          maxRetries: 0,  // we own retries via callWithBackoff
+        }),
+      { label: `${kind}:${modelTier}` }
+    )
 
     const durationMs = Date.now() - startMs
     const inputTokens = usage.inputTokens ?? 0
@@ -83,6 +88,7 @@ export async function callJsonModel<T>({
     if (NoObjectGeneratedError.isInstance(err) || name === 'ZodError') {
       throw new AiError('invalid_response', msg)
     }
+    // rate_limited only fires if backoff exhausted all attempts and final error is still 429
     if (status === 429) throw new AiError('rate_limited')
     if (status === 401 || status === 403) {
       throw new AiError('no_api_key', 'Key was rejected by provider — re-enter it in Settings')

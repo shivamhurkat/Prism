@@ -9,6 +9,7 @@ import { FailedBanner } from '@/components/failed-banner'
 import { getApiKeyStatus } from '@/app/actions/api-keys'
 import { updateDecisionBasics } from '@/app/actions/decisions'
 import { WIZARD_STEPS, type WizardStep } from '@/lib/wizard/reachability'
+import { MODELS, type Provider } from '@/lib/ai/models'
 import Link from 'next/link'
 
 export const metadata = {
@@ -120,14 +121,19 @@ export default async function DecisionDetailPage({ params, searchParams }: Props
 
   // ── COMPLETED ──────────────────────────────────────────────────────────────
   if (status === 'completed') {
-    const { data: runs } = await supabase
-      .from('runs')
-      .select('*')
-      .eq('decision_id', id)
-      .order('created_at', { ascending: false })
-      .limit(1)
+    const [{ data: runs }, { data: profile }] = await Promise.all([
+      supabase
+        .from('runs')
+        .select('*')
+        .eq('decision_id', id)
+        .order('created_at', { ascending: false })
+        .limit(1),
+      supabase.from('profiles').select('preferred_provider').eq('id', user.id).single(),
+    ])
 
     const latestRun = runs?.[0] ?? null
+    const provider: Provider = (profile?.preferred_provider as Provider | null) ?? 'anthropic'
+    const modelsUsed = { analysis: MODELS[provider].analysis, synthesis: MODELS[provider].heavy }
 
     const [{ data: synthesis }, { data: tasks }] = await Promise.all([
       latestRun
@@ -144,6 +150,7 @@ export default async function DecisionDetailPage({ params, searchParams }: Props
         run={latestRun!}
         synthesis={synthesis ?? null}
         tasks={tasks ?? []}
+        modelsUsed={modelsUsed}
       />
     )
   }
